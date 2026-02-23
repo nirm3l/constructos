@@ -18,7 +18,7 @@ DEPLOY_SOURCE=ghcr IMAGE_TAG=v0.1.230 bash ./scripts/deploy.sh
 
 ## Runtime profiles
 - `DEPLOY_TARGET=auto|base|ubuntu-gpu|macos-m4` (default: `auto`)
-- `DEPLOY_SOURCE=local|ghcr` (default: `local`)
+- `DEPLOY_SOURCE=ghcr` (default: `ghcr`)
 - `GHCR_OWNER` (default: `nirm3l`)
 - `GHCR_IMAGE_PREFIX` (default: `constructos`)
 
