@@ -7,7 +7,7 @@ cd "$ROOT_DIR"
 DEPLOYED_AT_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo "nogit")"
 DEPLOY_TARGET="${DEPLOY_TARGET:-auto}"
-DEPLOY_SOURCE="${DEPLOY_SOURCE:-local}"
+DEPLOY_SOURCE="${DEPLOY_SOURCE:-ghcr}"
 GHCR_OWNER="${GHCR_OWNER:-nirm3l}"
 GHCR_IMAGE_PREFIX="${GHCR_IMAGE_PREFIX:-${GHCR_REPO:-constructos}}"
 IMAGE_TAG="${IMAGE_TAG:-}"
@@ -80,30 +80,22 @@ case "$TARGET_RESOLVED" in
     ;;
 esac
 
-case "$DEPLOY_SOURCE" in
-  local)
-    APP_VERSION="$(python3 scripts/bump_version.py)"
-    APP_BUILD="$(date -u +"%Y%m%d%H%M%S")-${GIT_SHA}"
-    TASK_APP_IMAGE="${TASK_APP_IMAGE:-task-management-task-app:local}"
-    MCP_TOOLS_IMAGE="${MCP_TOOLS_IMAGE:-task-management-mcp-tools:local}"
-    ;;
-  ghcr)
-    if [[ -z "$IMAGE_TAG" ]]; then
-      echo "IMAGE_TAG is required when DEPLOY_SOURCE=ghcr"
-      echo "Example: DEPLOY_SOURCE=ghcr IMAGE_TAG=v0.1.227 ./scripts/deploy.sh"
-      exit 1
-    fi
-    APP_VERSION="$IMAGE_TAG"
-    APP_BUILD="ghcr-${IMAGE_TAG}-${GIT_SHA}"
-    TASK_APP_IMAGE="${TASK_APP_IMAGE:-ghcr.io/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-task-app:${IMAGE_TAG}}"
-    MCP_TOOLS_IMAGE="${MCP_TOOLS_IMAGE:-ghcr.io/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-mcp-tools:${IMAGE_TAG}}"
-    ;;
-  *)
-    echo "Unsupported DEPLOY_SOURCE: $DEPLOY_SOURCE"
-    echo "Supported values: local, ghcr"
-    exit 1
-    ;;
-esac
+if [[ "$DEPLOY_SOURCE" != "ghcr" ]]; then
+  echo "Unsupported DEPLOY_SOURCE: $DEPLOY_SOURCE"
+  echo "Only ghcr is supported in this repository."
+  exit 1
+fi
+
+if [[ -z "$IMAGE_TAG" ]]; then
+  echo "IMAGE_TAG is required when DEPLOY_SOURCE=ghcr"
+  echo "Example: DEPLOY_SOURCE=ghcr IMAGE_TAG=v0.1.227 bash ./scripts/deploy.sh"
+  exit 1
+fi
+
+APP_VERSION="$IMAGE_TAG"
+APP_BUILD="ghcr-${IMAGE_TAG}-${GIT_SHA}"
+TASK_APP_IMAGE="${TASK_APP_IMAGE:-ghcr.io/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-task-app:${IMAGE_TAG}}"
+MCP_TOOLS_IMAGE="${MCP_TOOLS_IMAGE:-ghcr.io/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-mcp-tools:${IMAGE_TAG}}"
 
 DEPLOY_SERVICES=(task-app mcp-tools)
 if [[ "$TARGET_RESOLVED" != "macos-m4" ]]; then
@@ -133,10 +125,6 @@ echo "mcp-tools image: ${MCP_TOOLS_IMAGE}"
 echo "Compose files: ${COMPOSE_ARGS[*]}"
 echo "Deploy services: ${DEPLOY_SERVICES[*]}"
 
-if [[ "$DEPLOY_SOURCE" == "ghcr" ]]; then
-  echo "Pulling images..."
-  docker compose "${COMPOSE_ARGS[@]}" --env-file .deploy.env pull "${DEPLOY_SERVICES[@]}"
-  docker compose "${COMPOSE_ARGS[@]}" --env-file .deploy.env up -d --no-build "${DEPLOY_SERVICES[@]}"
-else
-  docker compose "${COMPOSE_ARGS[@]}" --env-file .deploy.env up -d --build "${DEPLOY_SERVICES[@]}"
-fi
+echo "Pulling images..."
+docker compose "${COMPOSE_ARGS[@]}" --env-file .deploy.env pull "${DEPLOY_SERVICES[@]}"
+docker compose "${COMPOSE_ARGS[@]}" --env-file .deploy.env up -d --no-build "${DEPLOY_SERVICES[@]}"
