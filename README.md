@@ -13,14 +13,15 @@ git clone https://github.com/nirm3l/constructos.git
 cd constructos
 cp .env.example .env
 # edit .env
-DEPLOY_SOURCE=ghcr IMAGE_TAG=v0.1.230 bash ./scripts/deploy.sh
+IMAGE_TAG=v0.1.230 bash ./scripts/deploy.sh
 ```
 
 ## Runtime profiles
 - `DEPLOY_TARGET=auto|base|ubuntu-gpu|macos-m4` (default: `auto`)
-- `DEPLOY_SOURCE=ghcr` (default: `ghcr`)
-- `GHCR_OWNER` (default: `nirm3l`)
-- `GHCR_IMAGE_PREFIX` (default: `constructos`)
+- `IMAGE_TAG=<tag>` (required, for example `v0.1.230`)
+- `MCP_AUTH_TOKEN` (required)
+- `MCP_TOOL_AUTH_TOKEN` (optional; defaults to `MCP_AUTH_TOKEN`)
+- `LICENSE_SERVER_TOKEN` (required)
 
 ## Default GHCR images
 - `ghcr.io/nirm3l/constructos-task-app:<tag>`

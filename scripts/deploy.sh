@@ -6,13 +6,10 @@ cd "$ROOT_DIR"
 
 DEPLOYED_AT_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo "nogit")"
-DEPLOY_TARGET="${DEPLOY_TARGET:-auto}"
-DEPLOY_SOURCE="${DEPLOY_SOURCE:-ghcr}"
-GHCR_OWNER="${GHCR_OWNER:-nirm3l}"
-GHCR_IMAGE_PREFIX="${GHCR_IMAGE_PREFIX:-${GHCR_REPO:-constructos}}"
+DEPLOY_TARGET="${DEPLOY_TARGET:-}"
 IMAGE_TAG="${IMAGE_TAG:-}"
-TASK_APP_IMAGE="${TASK_APP_IMAGE:-}"
-MCP_TOOLS_IMAGE="${MCP_TOOLS_IMAGE:-}"
+GHCR_OWNER="nirm3l"
+GHCR_IMAGE_PREFIX="constructos"
 
 resolve_compose_env_value() {
   local var_name="$1"
@@ -61,6 +58,37 @@ resolve_deploy_target() {
   esac
 }
 
+if [[ -z "$DEPLOY_TARGET" ]]; then
+  DEPLOY_TARGET="$(resolve_compose_env_value "DEPLOY_TARGET" || true)"
+fi
+DEPLOY_TARGET="${DEPLOY_TARGET:-auto}"
+
+if [[ -z "$IMAGE_TAG" ]]; then
+  IMAGE_TAG="$(resolve_compose_env_value "IMAGE_TAG" || true)"
+fi
+if [[ -z "$IMAGE_TAG" ]]; then
+  echo "IMAGE_TAG is required (for example: IMAGE_TAG=v0.1.230)."
+  echo "You can set it in shell env or in .env."
+  exit 1
+fi
+
+MCP_AUTH_TOKEN_VALUE="$(resolve_compose_env_value "MCP_AUTH_TOKEN" || true)"
+MCP_TOOL_AUTH_TOKEN_VALUE="$(resolve_compose_env_value "MCP_TOOL_AUTH_TOKEN" || true)"
+LICENSE_SERVER_TOKEN_VALUE="$(resolve_compose_env_value "LICENSE_SERVER_TOKEN" || true)"
+
+if [[ -z "$MCP_AUTH_TOKEN_VALUE" ]]; then
+  echo "MCP_AUTH_TOKEN is required. Set it in .env."
+  exit 1
+fi
+if [[ -z "$LICENSE_SERVER_TOKEN_VALUE" ]]; then
+  echo "LICENSE_SERVER_TOKEN is required. Set it in .env."
+  exit 1
+fi
+
+if [[ -z "$MCP_TOOL_AUTH_TOKEN_VALUE" ]]; then
+  MCP_TOOL_AUTH_TOKEN_VALUE="$MCP_AUTH_TOKEN_VALUE"
+fi
+
 TARGET_RESOLVED="$(resolve_deploy_target)"
 COMPOSE_ARGS=(-f docker-compose.yml)
 
@@ -80,29 +108,15 @@ case "$TARGET_RESOLVED" in
     ;;
 esac
 
-if [[ "$DEPLOY_SOURCE" != "ghcr" ]]; then
-  echo "Unsupported DEPLOY_SOURCE: $DEPLOY_SOURCE"
-  echo "Only ghcr is supported in this repository."
-  exit 1
-fi
-
-if [[ -z "$IMAGE_TAG" ]]; then
-  echo "IMAGE_TAG is required when DEPLOY_SOURCE=ghcr"
-  echo "Example: DEPLOY_SOURCE=ghcr IMAGE_TAG=v0.1.227 bash ./scripts/deploy.sh"
-  exit 1
-fi
-
 APP_VERSION="$IMAGE_TAG"
 APP_BUILD="ghcr-${IMAGE_TAG}-${GIT_SHA}"
-TASK_APP_IMAGE="${TASK_APP_IMAGE:-ghcr.io/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-task-app:${IMAGE_TAG}}"
-MCP_TOOLS_IMAGE="${MCP_TOOLS_IMAGE:-ghcr.io/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-mcp-tools:${IMAGE_TAG}}"
+TASK_APP_IMAGE="ghcr.io/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-task-app:${IMAGE_TAG}"
+MCP_TOOLS_IMAGE="ghcr.io/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-mcp-tools:${IMAGE_TAG}"
 
 DEPLOY_SERVICES=(task-app mcp-tools)
 if [[ "$TARGET_RESOLVED" != "macos-m4" ]]; then
   DEPLOY_SERVICES+=(ollama)
 fi
-
-LICENSE_SERVER_TOKEN_VALUE="$(resolve_compose_env_value "LICENSE_SERVER_TOKEN" || true)"
 
 cat > .deploy.env <<EOF
 APP_VERSION=${APP_VERSION}
@@ -110,16 +124,15 @@ APP_BUILD=${APP_BUILD}
 APP_DEPLOYED_AT_UTC=${DEPLOYED_AT_UTC}
 TASK_APP_IMAGE=${TASK_APP_IMAGE}
 MCP_TOOLS_IMAGE=${MCP_TOOLS_IMAGE}
+MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN_VALUE}
+MCP_TOOL_AUTH_TOKEN=${MCP_TOOL_AUTH_TOKEN_VALUE}
+LICENSE_SERVER_TOKEN=${LICENSE_SERVER_TOKEN_VALUE}
 EOF
-
-if [[ -n "$LICENSE_SERVER_TOKEN_VALUE" ]]; then
-  printf 'LICENSE_SERVER_TOKEN=%s\n' "$LICENSE_SERVER_TOKEN_VALUE" >> .deploy.env
-fi
 
 echo "Deploy profile: client"
 echo "Deploying version ${APP_VERSION} (${APP_BUILD}) at ${DEPLOYED_AT_UTC}"
 echo "Resolved deploy target: ${TARGET_RESOLVED}"
-echo "Deploy source: ${DEPLOY_SOURCE}"
+echo "Deploy source: ghcr (fixed)"
 echo "task-app image: ${TASK_APP_IMAGE}"
 echo "mcp-tools image: ${MCP_TOOLS_IMAGE}"
 echo "Compose files: ${COMPOSE_ARGS[*]}"
