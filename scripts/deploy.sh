@@ -72,21 +72,10 @@ if [[ -z "$IMAGE_TAG" ]]; then
   exit 1
 fi
 
-MCP_AUTH_TOKEN_VALUE="$(resolve_compose_env_value "MCP_AUTH_TOKEN" || true)"
-MCP_TOOL_AUTH_TOKEN_VALUE="$(resolve_compose_env_value "MCP_TOOL_AUTH_TOKEN" || true)"
 LICENSE_SERVER_TOKEN_VALUE="$(resolve_compose_env_value "LICENSE_SERVER_TOKEN" || true)"
-
-if [[ -z "$MCP_AUTH_TOKEN_VALUE" ]]; then
-  echo "MCP_AUTH_TOKEN is required. Set it in .env."
-  exit 1
-fi
 if [[ -z "$LICENSE_SERVER_TOKEN_VALUE" ]]; then
   echo "LICENSE_SERVER_TOKEN is required. Set it in .env."
   exit 1
-fi
-
-if [[ -z "$MCP_TOOL_AUTH_TOKEN_VALUE" ]]; then
-  MCP_TOOL_AUTH_TOKEN_VALUE="$MCP_AUTH_TOKEN_VALUE"
 fi
 
 TARGET_RESOLVED="$(resolve_deploy_target)"
@@ -124,8 +113,6 @@ APP_BUILD=${APP_BUILD}
 APP_DEPLOYED_AT_UTC=${DEPLOYED_AT_UTC}
 TASK_APP_IMAGE=${TASK_APP_IMAGE}
 MCP_TOOLS_IMAGE=${MCP_TOOLS_IMAGE}
-MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN_VALUE}
-MCP_TOOL_AUTH_TOKEN=${MCP_TOOL_AUTH_TOKEN_VALUE}
 LICENSE_SERVER_TOKEN=${LICENSE_SERVER_TOKEN_VALUE}
 EOF
 
