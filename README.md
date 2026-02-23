@@ -13,7 +13,7 @@ git clone https://github.com/nirm3l/constructos.git
 cd constructos
 cp .env.example .env
 # edit .env
-DEPLOY_SOURCE=ghcr IMAGE_TAG=v0.1.230 ./scripts/deploy.sh
+DEPLOY_SOURCE=ghcr IMAGE_TAG=v0.1.230 bash ./scripts/deploy.sh
 ```
 
 ## Runtime profiles
