@@ -26,5 +26,3 @@ IMAGE_TAG=v0.1.230 bash ./scripts/deploy.sh
 ## Default GHCR images
 - `ghcr.io/nirm3l/constructos-task-app:<tag>`
 - `ghcr.io/nirm3l/constructos-mcp-tools:<tag>`
-
-No control-plane or marketing-site services are included in this repository.
