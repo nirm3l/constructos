@@ -21,7 +21,6 @@ IMAGE_TAG=main bash ./scripts/deploy.sh
 - `IMAGE_TAG=<tag>` (default: `main`)
 - `ACTIVATION_CODE` (recommended)
 - `LICENSE_SERVER_TOKEN` (manual fallback)
-- `LICENSE_SERVER_URL` (optional, default: `https://licence.constructos.dev`)
 
 ## Default GHCR images
 - `ghcr.io/nirm3l/constructos-task-app:<tag>`
