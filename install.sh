@@ -13,6 +13,8 @@ AUTO_DEPLOY="${AUTO_DEPLOY:-false}"
 INSTALL_COS="${INSTALL_COS:-true}"
 COS_INSTALL_METHOD="${COS_INSTALL_METHOD:-pipx}"
 INSTALL_OLLAMA="${INSTALL_OLLAMA:-auto}"
+CODEX_CONFIG_FILE="${CODEX_CONFIG_FILE:-}"
+CODEX_AUTH_FILE="${CODEX_AUTH_FILE:-}"
 EXCHANGED_IMAGE_TAG=""
 
 is_truthy() {
@@ -262,10 +264,18 @@ if [[ -z "$IMAGE_TAG" ]]; then
 fi
 
 if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then
+  if [[ -z "$CODEX_CONFIG_FILE" ]]; then
+    CODEX_CONFIG_FILE="./codex.config.toml"
+  fi
+  if [[ -z "$CODEX_AUTH_FILE" ]]; then
+    CODEX_AUTH_FILE="${HOME}/.codex/auth.json"
+  fi
   ENV_FILE_PATH="$(prepare_env_file "$INSTALL_DIR")"
   upsert_env_value "$ENV_FILE_PATH" "IMAGE_TAG" "$IMAGE_TAG"
   upsert_env_value "$ENV_FILE_PATH" "LICENSE_SERVER_TOKEN" "$LICENSE_SERVER_TOKEN"
-  echo "Prepared ${ENV_FILE_PATH} with IMAGE_TAG and LICENSE_SERVER_TOKEN."
+  upsert_env_value "$ENV_FILE_PATH" "CODEX_CONFIG_FILE" "$CODEX_CONFIG_FILE"
+  upsert_env_value "$ENV_FILE_PATH" "CODEX_AUTH_FILE" "$CODEX_AUTH_FILE"
+  echo "Prepared ${ENV_FILE_PATH} with IMAGE_TAG, LICENSE_SERVER_TOKEN, CODEX_CONFIG_FILE, and CODEX_AUTH_FILE."
 fi
 
 install_ollama
@@ -279,7 +289,7 @@ if is_truthy "$AUTO_DEPLOY"; then
   echo "Running deploy in ${INSTALL_DIR}..."
   (
     cd "$INSTALL_DIR"
-    IMAGE_TAG="$IMAGE_TAG" LICENSE_SERVER_TOKEN="$LICENSE_SERVER_TOKEN" bash ./scripts/deploy.sh
+    IMAGE_TAG="$IMAGE_TAG" LICENSE_SERVER_TOKEN="$LICENSE_SERVER_TOKEN" CODEX_CONFIG_FILE="$CODEX_CONFIG_FILE" CODEX_AUTH_FILE="$CODEX_AUTH_FILE" bash ./scripts/deploy.sh
   )
   exit 0
 fi

@@ -171,7 +171,7 @@ codex_backend = "docker"
 docker_container = "task-app"
 docker_workdir = "/app"
 docker_codex_binary = "codex"
-docker_app_mcp_url = "http://mcp-tools:8090/mcp"
+docker_app_mcp_url = "http://mcp-tools:8091/mcp"
 docker_codex_home_root = "/home/app/codex-home/workspace"
 app_mcp_name = "task-management-tools"
 app_mcp_url = "http://localhost:8091/mcp" # local backend default; auto replaced by docker_app_mcp_url when backend=docker and this value is not explicitly overridden

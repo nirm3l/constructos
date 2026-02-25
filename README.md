@@ -21,6 +21,8 @@ IMAGE_TAG=main bash ./scripts/deploy.sh
 - `IMAGE_TAG=<tag>` (default: `main`)
 - `ACTIVATION_CODE` (recommended)
 - `LICENSE_SERVER_TOKEN` (manual fallback)
+- `CODEX_CONFIG_FILE` (default: `./codex.config.toml`)
+- `CODEX_AUTH_FILE` (default: `${HOME}/.codex/auth.json`)
 - `INSTALL_COS=true|false` (default: `true`)
 - `COS_INSTALL_METHOD=pipx|link` (default: `pipx`)
 - `INSTALL_OLLAMA=auto|true|false` (default: `auto`)
@@ -37,6 +39,11 @@ Deploy behavior by target:
 ## Default GHCR images
 - `ghcr.io/nirm3l/constructos-task-app:<tag>`
 - `ghcr.io/nirm3l/constructos-mcp-tools:<tag>`
+
+## Codex host files
+- `task-app` mounts a repository-scoped Codex config file (`./codex.config.toml` by default) to `/home/app/.codex/config.toml`.
+- `task-app` mounts your Codex auth file (`${HOME}/.codex/auth.json` by default) to `/home/app/.codex/auth.json`.
+- Override either path with `CODEX_CONFIG_FILE` or `CODEX_AUTH_FILE` in `.env` or shell env before deploy.
 
 ## COS CLI
 `install.sh` now installs the `cos` CLI by default as a best-effort step.

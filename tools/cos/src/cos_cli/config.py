@@ -20,7 +20,7 @@ DEFAULT_CODEX_BACKEND = "docker"
 DEFAULT_DOCKER_CONTAINER = "task-app"
 DEFAULT_DOCKER_WORKDIR = "/app"
 DEFAULT_DOCKER_CODEX_BINARY = "codex"
-DEFAULT_DOCKER_APP_MCP_URL = "http://mcp-tools:8090/mcp"
+DEFAULT_DOCKER_APP_MCP_URL = "http://mcp-tools:8091/mcp"
 DEFAULT_DOCKER_CODEX_HOME_ROOT = "/home/app/codex-home/workspace"
 
 VALID_SANDBOX = {"read-only", "workspace-write", "danger-full-access"}
