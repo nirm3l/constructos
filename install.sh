@@ -12,6 +12,7 @@ LICENSE_SERVER_URL="${LICENSE_SERVER_URL:-https://licence.constructos.dev}"
 AUTO_DEPLOY="${AUTO_DEPLOY:-false}"
 INSTALL_COS="${INSTALL_COS:-true}"
 COS_INSTALL_METHOD="${COS_INSTALL_METHOD:-pipx}"
+INSTALL_OLLAMA="${INSTALL_OLLAMA:-auto}"
 EXCHANGED_IMAGE_TAG=""
 
 is_truthy() {
@@ -97,6 +98,77 @@ install_cos_cli() {
   fi
 
   echo "COS CLI installation failed; continuing without blocking core deployment."
+  return 0
+}
+
+resolve_host_os() {
+  uname -s
+}
+
+should_install_ollama() {
+  local normalized_value
+  normalized_value="$(echo "${INSTALL_OLLAMA:-auto}" | tr '[:upper:]' '[:lower:]')"
+  case "$normalized_value" in
+    1 | true | yes | on)
+      return 0
+      ;;
+    0 | false | no | off)
+      return 1
+      ;;
+    auto)
+      if [[ "$(resolve_host_os)" == "Darwin" ]]; then
+        return 0
+      fi
+      return 1
+      ;;
+    *)
+      echo "Unsupported INSTALL_OLLAMA=${INSTALL_OLLAMA}. Allowed: auto, true, false. Falling back to auto."
+      if [[ "$(resolve_host_os)" == "Darwin" ]]; then
+        return 0
+      fi
+      return 1
+      ;;
+  esac
+}
+
+install_ollama() {
+  local host_os
+  host_os="$(resolve_host_os)"
+
+  if ! should_install_ollama; then
+    echo "Skipping Ollama installation (INSTALL_OLLAMA=${INSTALL_OLLAMA})."
+    return 0
+  fi
+
+  if command -v ollama >/dev/null 2>&1; then
+    echo "Ollama is already installed."
+    return 0
+  fi
+
+  if [[ "$host_os" != "Darwin" ]]; then
+    echo "Automatic Ollama installation is currently supported only on macOS."
+    echo "Install manually from https://ollama.com/download"
+    return 0
+  fi
+
+  if ! command -v brew >/dev/null 2>&1; then
+    echo "Homebrew not found; cannot auto-install Ollama on macOS."
+    echo "Install manually from https://ollama.com/download"
+    return 0
+  fi
+
+  echo "Installing Ollama on macOS via Homebrew cask..."
+  if ! brew install --cask ollama; then
+    echo "Ollama installation failed; continuing without blocking core deployment."
+    echo "Install manually from https://ollama.com/download"
+    return 0
+  fi
+
+  if command -v open >/dev/null 2>&1; then
+    open -ga Ollama >/dev/null 2>&1 || true
+  fi
+
+  echo "Ollama installation completed."
   return 0
 }
 
@@ -196,6 +268,7 @@ if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then
   echo "Prepared ${ENV_FILE_PATH} with IMAGE_TAG and LICENSE_SERVER_TOKEN."
 fi
 
+install_ollama
 install_cos_cli "$INSTALL_DIR"
 
 if is_truthy "$AUTO_DEPLOY"; then
@@ -228,4 +301,4 @@ fi
 echo ""
 echo "No-edit install (recommended):"
 echo "curl -fsSL https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${REPO_REF}/install.sh | \\"
-echo "  ACTIVATION_CODE='ACT-XXXX-XXXX-XXXX-XXXX-XXXX' IMAGE_TAG=${IMAGE_TAG} INSTALL_COS=true AUTO_DEPLOY=1 bash"
+echo "  ACTIVATION_CODE='ACT-XXXX-XXXX-XXXX-XXXX-XXXX' IMAGE_TAG=${IMAGE_TAG} INSTALL_COS=true INSTALL_OLLAMA=auto AUTO_DEPLOY=1 bash"
