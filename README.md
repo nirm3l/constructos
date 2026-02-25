@@ -4,7 +4,7 @@ This repository contains the client-facing deployment package only.
 
 ## One-liner install
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nirm3l/constructos/main/install.sh | ACTIVATION_CODE=ACT-XXXX-XXXX-XXXX-XXXX-XXXX IMAGE_TAG=main AUTO_DEPLOY=1 bash
+curl -fsSL https://raw.githubusercontent.com/nirm3l/constructos/main/install.sh | ACTIVATION_CODE=ACT-XXXX-XXXX-XXXX-XXXX-XXXX IMAGE_TAG=main INSTALL_COS=true AUTO_DEPLOY=1 bash
 ```
 
 ## Manual install
@@ -21,7 +21,23 @@ IMAGE_TAG=main bash ./scripts/deploy.sh
 - `IMAGE_TAG=<tag>` (default: `main`)
 - `ACTIVATION_CODE` (recommended)
 - `LICENSE_SERVER_TOKEN` (manual fallback)
+- `INSTALL_COS=true|false` (default: `true`)
+- `COS_INSTALL_METHOD=pipx|link` (default: `pipx`)
 
 ## Default GHCR images
 - `ghcr.io/nirm3l/constructos-task-app:<tag>`
 - `ghcr.io/nirm3l/constructos-mcp-tools:<tag>`
+
+## COS CLI
+`install.sh` now installs the `cos` CLI by default as a best-effort step.
+
+If you do not want automatic installation:
+```bash
+curl -fsSL https://raw.githubusercontent.com/nirm3l/constructos/main/install.sh | ACTIVATION_CODE=ACT-XXXX-XXXX-XXXX-XXXX-XXXX INSTALL_COS=false bash
+```
+
+Manual install:
+```bash
+pipx install --force "git+https://github.com/nirm3l/constructos.git@main#subdirectory=tools/cos"
+cos --help
+```

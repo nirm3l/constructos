@@ -10,6 +10,8 @@ LICENSE_SERVER_TOKEN="${LICENSE_SERVER_TOKEN:-}"
 ACTIVATION_CODE="${ACTIVATION_CODE:-}"
 LICENSE_SERVER_URL="${LICENSE_SERVER_URL:-https://licence.constructos.dev}"
 AUTO_DEPLOY="${AUTO_DEPLOY:-false}"
+INSTALL_COS="${INSTALL_COS:-true}"
+COS_INSTALL_METHOD="${COS_INSTALL_METHOD:-pipx}"
 EXCHANGED_IMAGE_TAG=""
 
 is_truthy() {
@@ -60,6 +62,42 @@ prepare_env_file() {
     touch "$env_file"
   fi
   printf '%s' "$env_file"
+}
+
+install_cos_cli() {
+  local install_path="$1"
+  local method="${COS_INSTALL_METHOD}"
+  local cos_install_script="${install_path}/tools/cos/scripts/install.sh"
+
+  if ! is_truthy "${INSTALL_COS}"; then
+    echo "Skipping COS CLI installation (INSTALL_COS=${INSTALL_COS})."
+    return 0
+  fi
+
+  if [[ ! -f "${cos_install_script}" ]]; then
+    echo "COS CLI install script not found at ${cos_install_script}; skipping."
+    return 0
+  fi
+
+  if [[ "${method}" != "pipx" && "${method}" != "link" ]]; then
+    echo "Unsupported COS_INSTALL_METHOD=${method}. Allowed: pipx, link. Falling back to pipx."
+    method="pipx"
+  fi
+
+  if [[ "${method}" == "pipx" ]] && ! command -v pipx >/dev/null 2>&1; then
+    echo "pipx not found; skipping automatic COS CLI installation."
+    echo "Install manually with: bash ${cos_install_script} --user --method pipx"
+    return 0
+  fi
+
+  echo "Installing COS CLI (method=${method})..."
+  if bash "${cos_install_script}" --user --method "${method}"; then
+    echo "COS CLI installation completed."
+    return 0
+  fi
+
+  echo "COS CLI installation failed; continuing without blocking core deployment."
+  return 0
 }
 
 json_extract_field() {
@@ -158,6 +196,8 @@ if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then
   echo "Prepared ${ENV_FILE_PATH} with IMAGE_TAG and LICENSE_SERVER_TOKEN."
 fi
 
+install_cos_cli "$INSTALL_DIR"
+
 if is_truthy "$AUTO_DEPLOY"; then
   if [[ -z "$LICENSE_SERVER_TOKEN" ]]; then
     echo "AUTO_DEPLOY requires LICENSE_SERVER_TOKEN or ACTIVATION_CODE."
@@ -178,12 +218,14 @@ echo "1) cd ${INSTALL_DIR}"
 if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then
   echo "2) .env is already prepared with IMAGE_TAG and LICENSE_SERVER_TOKEN"
   echo "3) IMAGE_TAG=${IMAGE_TAG} bash ./scripts/deploy.sh"
+  echo "4) run 'cos --help' (if COS CLI was installed)"
 else
   echo "2) cp .env.example .env (if missing)"
   echo "3) set LICENSE_SERVER_TOKEN in .env"
   echo "4) IMAGE_TAG=${IMAGE_TAG} bash ./scripts/deploy.sh"
+  echo "5) run 'cos --help' (if COS CLI was installed)"
 fi
 echo ""
 echo "No-edit install (recommended):"
 echo "curl -fsSL https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${REPO_REF}/install.sh | \\"
-echo "  ACTIVATION_CODE='ACT-XXXX-XXXX-XXXX-XXXX-XXXX' IMAGE_TAG=${IMAGE_TAG} AUTO_DEPLOY=1 bash"
+echo "  ACTIVATION_CODE='ACT-XXXX-XXXX-XXXX-XXXX-XXXX' IMAGE_TAG=${IMAGE_TAG} INSTALL_COS=true AUTO_DEPLOY=1 bash"
