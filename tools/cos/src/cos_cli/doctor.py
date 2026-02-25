@@ -288,13 +288,18 @@ def docker_tcp_probe(container: str, host: str, port: int, timeout_seconds: floa
         "socket.create_connection((host,port),timeout=timeout).close()\n"
         "print(f'Connected to {host}:{port} from container.')\n"
     )
-    proc = subprocess.run(
-        ["docker", "exec", container, "python", "-c", code, host, str(port), str(timeout_seconds)],
-        text=True,
-        capture_output=True,
-        timeout=12,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(
+            ["docker", "exec", container, "python", "-c", code, host, str(port), str(timeout_seconds)],
+            text=True,
+            capture_output=True,
+            timeout=12,
+            check=False,
+        )
+    except FileNotFoundError:
+        return False, "Cannot connect from container because 'docker' is not available in PATH."
+    except OSError as exc:
+        return False, f"Cannot connect to {host}:{port} from container: {exc}"
     if proc.returncode == 0:
         return True, (proc.stdout or "").strip() or f"Connected to {host}:{port} from container."
     return False, f"Cannot connect to {host}:{port} from container: {_trim_process_detail(proc)}"
@@ -316,13 +321,18 @@ def docker_http_probe(container: str, url: str, timeout_seconds: float) -> tuple
         "    print(f'HTTP probe failed: {exc}')\n"
         "    raise SystemExit(2)\n"
     )
-    proc = subprocess.run(
-        ["docker", "exec", container, "python", "-c", code, url, str(timeout_seconds)],
-        text=True,
-        capture_output=True,
-        timeout=12,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(
+            ["docker", "exec", container, "python", "-c", code, url, str(timeout_seconds)],
+            text=True,
+            capture_output=True,
+            timeout=12,
+            check=False,
+        )
+    except FileNotFoundError:
+        return False, "HTTP probe from container failed because 'docker' is not available in PATH."
+    except OSError as exc:
+        return False, f"HTTP probe failed from container: {exc}"
     output = (proc.stdout or "").strip()
     if proc.returncode == 0:
         return True, output or "HTTP probe succeeded from container."

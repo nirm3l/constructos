@@ -66,4 +66,4 @@ jobs:
           cos exec --help
 
       - name: Smoke test doctor command
-        run: cos doctor --app-mcp-url https://example.com --json
+        run: cos doctor --codex-backend local --app-mcp-url https://example.com --json

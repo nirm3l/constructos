@@ -15,7 +15,7 @@ if str(SRC) not in sys.path:
 
 from cos_cli.codex_runner import build_codex_command, toml_quote  # noqa: E402
 from cos_cli.config import resolve_effective_config  # noqa: E402
-from cos_cli.doctor import _collect_docker_git_auth_checks, resolve_mcp_endpoint, summarize_check_counts  # noqa: E402
+from cos_cli.doctor import _collect_docker_git_auth_checks, docker_tcp_probe, resolve_mcp_endpoint, summarize_check_counts  # noqa: E402
 from cos_cli.main import main  # noqa: E402
 from cos_cli.parser import _apply_green_theme_to_chunk, app  # noqa: E402
 from cos_cli.prompting import compose_prompt  # noqa: E402
@@ -233,6 +233,16 @@ def test_collect_docker_git_auth_checks_pat_missing(monkeypatch):
     assert by_name["git_in_docker"]["status"] == "ok"
     assert by_name["github_pat_in_docker"]["status"] == "warn"
     assert by_name["git_push_auth_in_docker"]["status"] == "warn"
+
+
+def test_docker_tcp_probe_handles_missing_docker(monkeypatch):
+    def fake_run(*args, **kwargs):
+        raise FileNotFoundError("docker")
+
+    monkeypatch.setattr("cos_cli.doctor.subprocess.run", fake_run)
+    ok, message = docker_tcp_probe("task-app", "example.com", 443, 2.0)
+    assert ok is False
+    assert "not available in PATH" in message
 
 
 def test_parser_version_flag_prints_version_and_exits():
