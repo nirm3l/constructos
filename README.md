@@ -45,6 +45,17 @@ Deploy behavior by target:
 - `task-app` mounts your Codex auth file (`${HOME}/.codex/auth.json` by default) to `/home/app/.codex/auth.json`.
 - Override either path with `CODEX_CONFIG_FILE` or `CODEX_AUTH_FILE` in `.env` or shell env before deploy.
 
+## Optional: Jira MCP (separate compose)
+1. Create local env file:
+```bash
+cp .env.jira-mcp.example .env.jira-mcp
+```
+2. Set your Jira credentials in `.env.jira-mcp`.
+3. Start Jira MCP:
+```bash
+docker compose -p constructos-jira-mcp -f docker-compose.jira-mcp.yml up -d
+```
+
 ## COS CLI
 `install.sh` now installs the `cos` CLI by default as a best-effort step.
 
