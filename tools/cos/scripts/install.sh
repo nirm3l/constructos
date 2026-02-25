@@ -3,7 +3,7 @@ set -euo pipefail
 
 MODE="user"
 METHOD="pipx"
-PACKAGE_NAME="constructos-cos"
+PACKAGE_NAME="constructos-cli"
 
 usage() {
   cat <<'EOF'

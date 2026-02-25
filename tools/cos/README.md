@@ -58,7 +58,7 @@ cos --version
 
 Upgrade:
 ```bash
-pipx upgrade constructos-cos
+pipx upgrade constructos-cli
 ```
 
 ## Alternative Install Script
@@ -81,7 +81,7 @@ Script modes:
 
 Or direct:
 ```bash
-pipx uninstall constructos-cos
+pipx uninstall constructos-cli
 ```
 
 ## Build Artifacts (wheel + sdist)
@@ -102,7 +102,7 @@ pipx install --force tools/cos/dist/*.whl
 
 Install from GitHub release wheel:
 ```bash
-pipx install --force "https://github.com/nirm3l/constructos/releases/download/cos-vX.Y.Z/constructos_cos-X.Y.Z-py3-none-any.whl"
+pipx install --force "https://github.com/nirm3l/constructos/releases/download/cos-vX.Y.Z/constructos_cli-X.Y.Z-py3-none-any.whl"
 ```
 
 ## Usage
