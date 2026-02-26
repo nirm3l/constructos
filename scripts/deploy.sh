@@ -8,11 +8,17 @@ DEPLOYED_AT_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo "nogit")"
 DEPLOY_TARGET="${DEPLOY_TARGET:-}"
 IMAGE_TAG="${IMAGE_TAG:-}"
-DEPLOY_WITH_OLLAMA="${DEPLOY_WITH_OLLAMA:-auto}"
+DEPLOY_OLLAMA_MODE="${DEPLOY_OLLAMA_MODE:-}"
+DEPLOY_WITH_OLLAMA="${DEPLOY_WITH_OLLAMA:-}"
 GHCR_OWNER="nirm3l"
 GHCR_IMAGE_PREFIX="constructos"
 CODEX_CONFIG_FILE="${CODEX_CONFIG_FILE:-}"
 CODEX_AUTH_FILE="${CODEX_AUTH_FILE:-}"
+HOST_OS=""
+TARGET_RESOLVED=""
+REQUESTED_OLLAMA_MODE=""
+RESOLVED_OLLAMA_MODE=""
+OLLAMA_GPU_BACKEND=""
 
 log_info() {
   echo "[INFO] $*"
@@ -36,6 +42,35 @@ normalize_truthy() {
       ;;
     auto | "")
       echo "auto"
+      ;;
+    *)
+      echo "invalid"
+      ;;
+  esac
+}
+
+normalize_ollama_mode() {
+  case "$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    auto | "")
+      echo "auto"
+      ;;
+    docker)
+      echo "docker"
+      ;;
+    docker-gpu)
+      echo "docker-gpu"
+      ;;
+    host)
+      echo "host"
+      ;;
+    none)
+      echo "none"
+      ;;
+    1 | true | yes | on)
+      echo "docker"
+      ;;
+    0 | false | no | off)
+      echo "none"
       ;;
     *)
       echo "invalid"
@@ -174,34 +209,117 @@ resolve_deploy_target() {
   esac
 }
 
-resolve_ollama_service_enabled() {
-  local target="$1"
-  local requested_mode="$2"
-  local normalized_mode
-
-  normalized_mode="$(normalize_truthy "$requested_mode")"
-  if [[ "$normalized_mode" == "invalid" ]]; then
-    log_warn "Unsupported DEPLOY_WITH_OLLAMA=${requested_mode}. Allowed: auto, true, false. Falling back to auto."
-    normalized_mode="auto"
+host_ollama_reachable() {
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsS --max-time 2 "http://localhost:11434/api/tags" >/dev/null 2>&1
+    return $?
   fi
 
-  if [[ "$target" == "macos-m4" || "$target" == "windows-desktop" ]]; then
-    if [[ "$normalized_mode" == "true" ]]; then
-      log_warn "DEPLOY_WITH_OLLAMA=true is not used for ${target}; this profile expects host Ollama."
-    fi
-    echo "false"
+  if command -v ollama >/dev/null 2>&1; then
+    ollama list >/dev/null 2>&1
+    return $?
+  fi
+
+  return 1
+}
+
+detect_gpu_backend() {
+  local host_os="$1"
+
+  if [[ "$host_os" == "linux" ]] && [[ -e /dev/dri ]]; then
+    echo "dri"
     return 0
   fi
 
-  case "$normalized_mode" in
-    true)
-      echo "true"
-      ;;
-    false)
-      echo "false"
-      ;;
+  local runtimes
+  runtimes="$(docker info --format '{{json .Runtimes}}' 2>/dev/null || true)"
+  if echo "$runtimes" | grep -qi '"nvidia"'; then
+    echo "nvidia"
+    return 0
+  fi
+
+  echo ""
+}
+
+resolve_requested_ollama_mode() {
+  if [[ -z "$DEPLOY_OLLAMA_MODE" ]]; then
+    DEPLOY_OLLAMA_MODE="$(resolve_compose_env_value "DEPLOY_OLLAMA_MODE" || true)"
+  fi
+
+  if [[ -z "$DEPLOY_OLLAMA_MODE" ]]; then
+    if [[ -z "$DEPLOY_WITH_OLLAMA" ]]; then
+      DEPLOY_WITH_OLLAMA="$(resolve_compose_env_value "DEPLOY_WITH_OLLAMA" || true)"
+    fi
+    DEPLOY_OLLAMA_MODE="$DEPLOY_WITH_OLLAMA"
+  fi
+
+  if [[ -z "$DEPLOY_OLLAMA_MODE" ]]; then
+    DEPLOY_OLLAMA_MODE="auto"
+  fi
+
+  REQUESTED_OLLAMA_MODE="$(normalize_ollama_mode "$DEPLOY_OLLAMA_MODE")"
+  if [[ "$REQUESTED_OLLAMA_MODE" == "invalid" ]]; then
+    log_error "Unsupported DEPLOY_OLLAMA_MODE=${DEPLOY_OLLAMA_MODE}."
+    log_error "Allowed values: auto, docker, docker-gpu, host, none"
+    exit 1
+  fi
+}
+
+resolve_runtime_ollama_mode() {
+  local requested_mode="$1"
+  local target="$2"
+  local host_os="$3"
+  local gpu_backend=""
+
+  OLLAMA_GPU_BACKEND=""
+
+  if [[ "$target" == "macos-m4" ]]; then
+    if [[ "$requested_mode" == "none" ]]; then
+      RESOLVED_OLLAMA_MODE="none"
+      return 0
+    fi
+    if [[ "$requested_mode" != "auto" && "$requested_mode" != "host" ]]; then
+      log_warn "${requested_mode} is not used for macOS profile. Falling back to host Ollama."
+    fi
+    RESOLVED_OLLAMA_MODE="host"
+    return 0
+  fi
+
+  case "$requested_mode" in
     auto)
-      echo "true"
+      gpu_backend="$(detect_gpu_backend "$host_os")"
+      if [[ -n "$gpu_backend" ]]; then
+        RESOLVED_OLLAMA_MODE="docker-gpu"
+        OLLAMA_GPU_BACKEND="$gpu_backend"
+        return 0
+      fi
+      if host_ollama_reachable; then
+        RESOLVED_OLLAMA_MODE="host"
+        return 0
+      fi
+      RESOLVED_OLLAMA_MODE="docker"
+      return 0
+      ;;
+    docker-gpu)
+      gpu_backend="$(detect_gpu_backend "$host_os")"
+      if [[ -n "$gpu_backend" ]]; then
+        RESOLVED_OLLAMA_MODE="docker-gpu"
+        OLLAMA_GPU_BACKEND="$gpu_backend"
+        return 0
+      fi
+      log_warn "docker-gpu requested but no Docker GPU backend was detected."
+      if host_ollama_reachable; then
+        log_warn "Falling back to host Ollama."
+        RESOLVED_OLLAMA_MODE="host"
+      else
+        log_warn "Falling back to Docker Ollama without GPU."
+        RESOLVED_OLLAMA_MODE="docker"
+      fi
+      return 0
+      ;;
+    docker | host | none)
+      RESOLVED_OLLAMA_MODE="$requested_mode"
+      return 0
       ;;
   esac
 }
@@ -235,8 +353,8 @@ if [[ -z "$IMAGE_TAG" ]]; then
   IMAGE_TAG="$(resolve_compose_env_value "IMAGE_TAG" || true)"
 fi
 if [[ -z "$IMAGE_TAG" ]]; then
-  echo "IMAGE_TAG is required (for example: IMAGE_TAG=v0.1.230)."
-  echo "You can set it in shell env or in .env."
+  log_error "IMAGE_TAG is required (for example: IMAGE_TAG=v0.1.230)."
+  log_error "Set it in shell env or in .env."
   exit 1
 fi
 
@@ -264,18 +382,18 @@ fi
 
 LICENSE_SERVER_TOKEN_VALUE="$(resolve_compose_env_value "LICENSE_SERVER_TOKEN" || true)"
 if [[ -z "$LICENSE_SERVER_TOKEN_VALUE" ]]; then
-  echo "LICENSE_SERVER_TOKEN is required. Set it in .env."
+  log_error "LICENSE_SERVER_TOKEN is required. Set it in .env or shell env."
   exit 1
 fi
 
 if [[ ! -f "$CODEX_CONFIG_FILE" ]]; then
-  echo "Missing Codex config file: $CODEX_CONFIG_FILE"
-  echo "Set CODEX_CONFIG_FILE to a valid file path before deploy."
+  log_error "Missing Codex config file: $CODEX_CONFIG_FILE"
+  log_error "Set CODEX_CONFIG_FILE to a valid file path before deploy."
   exit 1
 fi
 if [[ ! -f "$CODEX_AUTH_FILE" ]]; then
-  echo "Missing Codex auth file: $CODEX_AUTH_FILE"
-  echo "Run codex login on host or set CODEX_AUTH_FILE before deploy."
+  log_error "Missing Codex auth file: $CODEX_AUTH_FILE"
+  log_error "Run codex login on host or set CODEX_AUTH_FILE before deploy."
   exit 1
 fi
 
@@ -287,28 +405,57 @@ if ! chmod a+r "$CODEX_AUTH_FILE" 2>/dev/null; then
 fi
 
 TARGET_RESOLVED="$(resolve_deploy_target "$HOST_OS")"
-COMPOSE_ARGS=(-f docker-compose.yml)
+resolve_requested_ollama_mode
+resolve_runtime_ollama_mode "$REQUESTED_OLLAMA_MODE" "$TARGET_RESOLVED" "$HOST_OS"
 
+COMPOSE_FILES=(docker-compose.yml)
 case "$TARGET_RESOLVED" in
   base)
     ;;
   ubuntu-gpu)
-    COMPOSE_ARGS+=(-f docker-compose.ubuntu-gpu.yml)
+    # Add this profile only when running Docker GPU with DRI passthrough.
+    if [[ "$RESOLVED_OLLAMA_MODE" == "docker-gpu" && "$OLLAMA_GPU_BACKEND" == "dri" ]]; then
+      COMPOSE_FILES+=(docker-compose.ubuntu-gpu.yml)
+    fi
     ;;
   macos-m4)
-    COMPOSE_ARGS+=(-f docker-compose.macos-m4.yml)
+    COMPOSE_FILES+=(docker-compose.macos-m4.yml)
     ;;
   windows-desktop)
-    COMPOSE_ARGS+=(-f docker-compose.windows.yml)
+    COMPOSE_FILES+=(docker-compose.windows.yml)
     ;;
   *)
-    echo "Unsupported DEPLOY_TARGET: $TARGET_RESOLVED"
-    echo "Supported values: auto, base, ubuntu-gpu, macos-m4, windows-desktop"
+    log_error "Unsupported DEPLOY_TARGET: $TARGET_RESOLVED"
+    log_error "Supported values: auto, base, ubuntu-gpu, macos-m4, windows-desktop"
     exit 1
     ;;
 esac
 
-OLLAMA_SERVICE_ENABLED="$(resolve_ollama_service_enabled "$TARGET_RESOLVED" "$DEPLOY_WITH_OLLAMA")"
+case "$RESOLVED_OLLAMA_MODE" in
+  host)
+    COMPOSE_FILES+=(docker-compose.ollama-host.yml)
+    if [[ "$HOST_OS" == "linux" && "$TARGET_RESOLVED" != "macos-m4" ]]; then
+      COMPOSE_FILES+=(docker-compose.ollama-host-linux.yml)
+    fi
+    ;;
+  none)
+    COMPOSE_FILES+=(docker-compose.ollama-disabled.yml)
+    ;;
+  docker)
+    ;;
+  docker-gpu)
+    if [[ "$OLLAMA_GPU_BACKEND" == "nvidia" ]]; then
+      COMPOSE_FILES+=(docker-compose.ollama-gpu-nvidia.yml)
+    elif [[ "$OLLAMA_GPU_BACKEND" == "dri" && "$TARGET_RESOLVED" != "ubuntu-gpu" ]]; then
+      COMPOSE_FILES+=(docker-compose.ollama-gpu-dri.yml)
+    fi
+    ;;
+esac
+
+COMPOSE_ARGS=()
+for compose_file in "${COMPOSE_FILES[@]}"; do
+  COMPOSE_ARGS+=(-f "$compose_file")
+done
 
 APP_VERSION="$IMAGE_TAG"
 APP_BUILD="ghcr-${IMAGE_TAG}-${GIT_SHA}"
@@ -316,11 +463,11 @@ TASK_APP_IMAGE="ghcr.io/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-task-app:${IMAGE_TAG}
 MCP_TOOLS_IMAGE="ghcr.io/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-mcp-tools:${IMAGE_TAG}"
 
 DEPLOY_SERVICES=(task-app mcp-tools)
-if [[ "$OLLAMA_SERVICE_ENABLED" == "true" ]]; then
+if [[ "$RESOLVED_OLLAMA_MODE" == "docker" || "$RESOLVED_OLLAMA_MODE" == "docker-gpu" ]]; then
   DEPLOY_SERVICES+=(ollama)
 fi
 
-cat > .deploy.env <<EOF
+cat > .deploy.env <<EOF_ENV
 APP_VERSION=${APP_VERSION}
 APP_BUILD=${APP_BUILD}
 APP_DEPLOYED_AT_UTC=${DEPLOYED_AT_UTC}
@@ -329,16 +476,25 @@ MCP_TOOLS_IMAGE=${MCP_TOOLS_IMAGE}
 LICENSE_SERVER_TOKEN=${LICENSE_SERVER_TOKEN_VALUE}
 CODEX_CONFIG_FILE=${CODEX_CONFIG_FILE}
 CODEX_AUTH_FILE=${CODEX_AUTH_FILE}
-EOF
+EOF_ENV
 
 log_info "Deploy profile: client"
 log_info "Version: ${APP_VERSION} (${APP_BUILD})"
 log_info "Target: ${TARGET_RESOLVED}"
 log_info "Source: ghcr"
-log_info "Services: ${DEPLOY_SERVICES[*]}"
-if [[ "$OLLAMA_SERVICE_ENABLED" == "false" ]]; then
-  log_warn "Ollama container is not included in this deploy. AI embedding features require reachable Ollama at OLLAMA_BASE_URL."
+log_info "Ollama mode requested: ${REQUESTED_OLLAMA_MODE}"
+log_info "Ollama mode selected: ${RESOLVED_OLLAMA_MODE}"
+if [[ "$RESOLVED_OLLAMA_MODE" == "docker-gpu" ]]; then
+  log_info "Ollama GPU backend: ${OLLAMA_GPU_BACKEND}"
 fi
+if [[ "$RESOLVED_OLLAMA_MODE" == "none" ]]; then
+  log_warn "Ollama is disabled. AI embedding and retrieval features will be limited."
+fi
+if [[ "$RESOLVED_OLLAMA_MODE" == "host" ]] && ! host_ollama_reachable; then
+  log_warn "Host Ollama does not appear reachable on http://localhost:11434."
+  log_warn "Start Ollama before using AI embedding features."
+fi
+log_info "Services: ${DEPLOY_SERVICES[*]}"
 
 run_compose_step \
   "Pull images" \

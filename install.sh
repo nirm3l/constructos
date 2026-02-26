@@ -13,7 +13,8 @@ AUTO_DEPLOY="${AUTO_DEPLOY:-false}"
 INSTALL_COS="${INSTALL_COS:-true}"
 COS_INSTALL_METHOD="${COS_INSTALL_METHOD:-pipx}"
 INSTALL_OLLAMA="${INSTALL_OLLAMA:-auto}"
-DEPLOY_WITH_OLLAMA="${DEPLOY_WITH_OLLAMA:-auto}"
+DEPLOY_OLLAMA_MODE="${DEPLOY_OLLAMA_MODE:-}"
+DEPLOY_WITH_OLLAMA="${DEPLOY_WITH_OLLAMA:-}"
 CODEX_CONFIG_FILE="${CODEX_CONFIG_FILE:-}"
 CODEX_AUTH_FILE="${CODEX_AUTH_FILE:-}"
 EXCHANGED_IMAGE_TAG=""
@@ -51,6 +52,35 @@ normalize_truthy() {
       ;;
     auto | "")
       echo "auto"
+      ;;
+    *)
+      echo "invalid"
+      ;;
+  esac
+}
+
+normalize_ollama_mode() {
+  case "$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    auto | "")
+      echo "auto"
+      ;;
+    docker)
+      echo "docker"
+      ;;
+    docker-gpu)
+      echo "docker-gpu"
+      ;;
+    host)
+      echo "host"
+      ;;
+    none)
+      echo "none"
+      ;;
+    1 | true | yes | on)
+      echo "docker"
+      ;;
+    0 | false | no | off)
+      echo "none"
       ;;
     *)
       echo "invalid"
@@ -135,6 +165,21 @@ ensure_docker_available() {
   return 0
 }
 
+resolve_requested_ollama_mode() {
+  if [[ -z "$DEPLOY_OLLAMA_MODE" ]]; then
+    DEPLOY_OLLAMA_MODE="$DEPLOY_WITH_OLLAMA"
+  fi
+  if [[ -z "$DEPLOY_OLLAMA_MODE" ]]; then
+    DEPLOY_OLLAMA_MODE="auto"
+  fi
+
+  DEPLOY_OLLAMA_MODE="$(normalize_ollama_mode "$DEPLOY_OLLAMA_MODE")"
+  if [[ "$DEPLOY_OLLAMA_MODE" == "invalid" ]]; then
+    log_warn "Unsupported DEPLOY_OLLAMA_MODE value. Falling back to auto."
+    DEPLOY_OLLAMA_MODE="auto"
+  fi
+}
+
 upsert_env_value() {
   local file_path="$1"
   local key="$2"
@@ -215,10 +260,10 @@ explain_ollama_usage() {
   echo "Ollama powers local embeddings and AI retrieval/context features in Constructos."
   case "$host_os" in
     linux)
-      echo "On Linux, deploy can run an Ollama container automatically."
+      echo "On Linux, you can use Docker Ollama (with GPU when available) or host Ollama."
       ;;
     macos | windows)
-      echo "On ${host_os}, this profile expects host Ollama at http://host.docker.internal:11434."
+      echo "On ${host_os}, you can use host Ollama, and deploy can also try Docker Ollama on supported setups."
       ;;
     *)
       echo "If Ollama is unavailable, AI embedding features will be limited."
@@ -228,20 +273,28 @@ explain_ollama_usage() {
 
 prompt_for_ollama_preference() {
   local host_os="$1"
-  local normalized_value
+  local normalized_install_ollama
+
+  if [[ "$host_os" == "macos" && "$DEPLOY_OLLAMA_MODE" == "auto" ]]; then
+    DEPLOY_OLLAMA_MODE="host"
+  fi
+
+  if [[ "$DEPLOY_OLLAMA_MODE" != "auto" ]]; then
+    return 0
+  fi
 
   if command -v ollama >/dev/null 2>&1; then
     return 0
   fi
 
-  normalized_value="$(normalize_truthy "${INSTALL_OLLAMA:-auto}")"
-  if [[ "$normalized_value" == "invalid" ]]; then
+  normalized_install_ollama="$(normalize_truthy "${INSTALL_OLLAMA:-auto}")"
+  if [[ "$normalized_install_ollama" == "invalid" ]]; then
     log_warn "Unsupported INSTALL_OLLAMA=${INSTALL_OLLAMA}. Allowed: auto, true, false. Falling back to auto."
     INSTALL_OLLAMA="auto"
-    normalized_value="auto"
+    normalized_install_ollama="auto"
   fi
 
-  if [[ "$normalized_value" != "auto" ]]; then
+  if [[ "$normalized_install_ollama" != "auto" ]]; then
     return 0
   fi
 
@@ -250,43 +303,55 @@ prompt_for_ollama_preference() {
 
   if [[ ! -t 0 ]]; then
     log_warn "Non-interactive shell detected; cannot prompt for Ollama preference."
-    if [[ "$host_os" == "linux" ]]; then
-      log_warn "Keeping INSTALL_OLLAMA=auto and DEPLOY_WITH_OLLAMA=auto (Linux deploy includes Ollama container by default)."
-    else
-      log_warn "Keeping INSTALL_OLLAMA=auto. Install Ollama manually to enable AI embedding features."
-    fi
+    log_warn "Keeping DEPLOY_OLLAMA_MODE=auto."
     return 0
   fi
 
   while true; do
-    echo "Choose how to continue:"
-    echo "1) Continue with Ollama support (recommended)"
-    echo "2) Continue without Ollama (AI embedding features will be limited)"
-    read -r -p "Select [1/2]: " ollama_choice
+    echo "Choose Ollama runtime:"
+    echo "1) Auto (recommended) - try Docker GPU, then host Ollama, then Docker CPU"
+    echo "2) Host Ollama only"
+    echo "3) Continue without Ollama"
+    read -r -p "Select [1/2/3]: " ollama_choice
     case "$ollama_choice" in
       1 | "")
-        if [[ "$host_os" == "linux" ]]; then
-          INSTALL_OLLAMA="auto"
-          DEPLOY_WITH_OLLAMA="auto"
-        else
+        DEPLOY_OLLAMA_MODE="auto"
+        return 0
+        ;;
+      2)
+        DEPLOY_OLLAMA_MODE="host"
+        if [[ "$host_os" == "macos" || "$host_os" == "windows" ]]; then
           INSTALL_OLLAMA="true"
         fi
         return 0
         ;;
-      2)
+      3)
+        DEPLOY_OLLAMA_MODE="none"
         INSTALL_OLLAMA="false"
-        DEPLOY_WITH_OLLAMA="false"
         log_warn "Continuing without Ollama support."
         return 0
         ;;
       *)
-        echo "Please enter 1 or 2."
+        echo "Please enter 1, 2, or 3."
         ;;
     esac
   done
 }
 
 should_install_ollama() {
+  local host_os
+  host_os="$(resolve_host_os)"
+
+  if [[ "$DEPLOY_OLLAMA_MODE" == "none" || "$DEPLOY_OLLAMA_MODE" == "docker" || "$DEPLOY_OLLAMA_MODE" == "docker-gpu" ]]; then
+    return 1
+  fi
+
+  if [[ "$DEPLOY_OLLAMA_MODE" == "host" ]]; then
+    if [[ "${INSTALL_OLLAMA:-auto}" == "auto" && ( "$host_os" == "macos" || "$host_os" == "windows" ) ]]; then
+      return 0
+    fi
+  fi
+
   local normalized_value
   normalized_value="$(normalize_truthy "${INSTALL_OLLAMA:-auto}")"
   case "$normalized_value" in
@@ -297,14 +362,14 @@ should_install_ollama() {
       return 1
       ;;
     auto)
-      if [[ "$(resolve_host_os)" == "macos" ]]; then
+      if [[ "$host_os" == "macos" ]]; then
         return 0
       fi
       return 1
       ;;
     invalid)
       log_warn "Unsupported INSTALL_OLLAMA=${INSTALL_OLLAMA}. Allowed: auto, true, false. Falling back to auto."
-      if [[ "$(resolve_host_os)" == "macos" ]]; then
+      if [[ "$host_os" == "macos" ]]; then
         return 0
       fi
       return 1
@@ -458,6 +523,7 @@ exchange_license_token() {
 
 HOST_OS="$(resolve_host_os)"
 ensure_docker_available "$HOST_OS" "false" || true
+resolve_requested_ollama_mode
 prompt_for_ollama_preference "$HOST_OS"
 
 ARCHIVE_URL="https://codeload.github.com/${REPO_OWNER}/${REPO_NAME}/tar.gz/${REPO_REF}"
@@ -491,7 +557,7 @@ if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then
   upsert_env_value "$ENV_FILE_PATH" "LICENSE_SERVER_TOKEN" "$LICENSE_SERVER_TOKEN"
   upsert_env_value "$ENV_FILE_PATH" "CODEX_CONFIG_FILE" "$CODEX_CONFIG_FILE"
   upsert_env_value "$ENV_FILE_PATH" "CODEX_AUTH_FILE" "$CODEX_AUTH_FILE"
-  upsert_env_value "$ENV_FILE_PATH" "DEPLOY_WITH_OLLAMA" "$DEPLOY_WITH_OLLAMA"
+  upsert_env_value "$ENV_FILE_PATH" "DEPLOY_OLLAMA_MODE" "$DEPLOY_OLLAMA_MODE"
   if [[ "$HOST_OS" == "windows" ]]; then
     upsert_env_value "$ENV_FILE_PATH" "DEPLOY_TARGET" "windows-desktop"
   fi
@@ -500,6 +566,7 @@ fi
 
 install_ollama
 install_cos_cli "$INSTALL_DIR"
+log_info "Selected Ollama deploy mode: ${DEPLOY_OLLAMA_MODE}"
 
 if is_truthy "$AUTO_DEPLOY"; then
   if [[ -z "$LICENSE_SERVER_TOKEN" ]]; then
@@ -514,7 +581,7 @@ if is_truthy "$AUTO_DEPLOY"; then
     LICENSE_SERVER_TOKEN="$LICENSE_SERVER_TOKEN" \
     CODEX_CONFIG_FILE="$CODEX_CONFIG_FILE" \
     CODEX_AUTH_FILE="$CODEX_AUTH_FILE" \
-    DEPLOY_WITH_OLLAMA="$DEPLOY_WITH_OLLAMA" \
+    DEPLOY_OLLAMA_MODE="$DEPLOY_OLLAMA_MODE" \
     bash ./scripts/deploy.sh
   )
   exit 0

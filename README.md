@@ -26,17 +26,23 @@ IMAGE_TAG=main bash ./scripts/deploy.sh
 - `INSTALL_COS=true|false` (default: `true`)
 - `COS_INSTALL_METHOD=pipx|link` (default: `pipx`)
 - `INSTALL_OLLAMA=auto|true|false` (default: `auto`)
-- `DEPLOY_WITH_OLLAMA=auto|true|false` (default: `auto`, Linux-only service toggle)
+- `DEPLOY_OLLAMA_MODE=auto|docker|docker-gpu|host|none` (default: `auto`)
 
 `INSTALL_OLLAMA` behavior:
 - `auto`: prompt when Ollama is missing, then continue with/without support.
 - `true`: try to install Ollama on host (automated on macOS and Windows when package manager is available).
 - `false`: skip Ollama installation.
 
-Deploy behavior by target:
-- `macos-m4`: app uses host Ollama at `http://host.docker.internal:11434`.
-- `windows-desktop`: app uses host Ollama at `http://host.docker.internal:11434`.
-- `base` and `ubuntu-gpu`: Ollama runs as a Docker service (`ollama`).
+`DEPLOY_OLLAMA_MODE` behavior:
+- `auto`: chooses in order `docker-gpu -> host -> docker` (on macOS profile: fixed to host unless `none`).
+- `docker`: run Ollama as a Docker service (CPU mode).
+- `docker-gpu`: prefer Docker GPU mode; if GPU backend is unavailable, deploy falls back to `host` then `docker`.
+- `host`: use host Ollama at `http://host.docker.internal:11434`.
+- `none`: skip Ollama service entirely.
+
+Platform defaults:
+- `macos-m4`: fixed to host Ollama (unless mode is `none`).
+- `windows-desktop` and Linux targets (`base`/`ubuntu-gpu`): support both Docker and host Ollama modes.
 
 ## Default GHCR images
 - `ghcr.io/nirm3l/constructos-task-app:<tag>`
@@ -71,9 +77,19 @@ Skip Ollama installation explicitly:
 curl -fsSL https://raw.githubusercontent.com/nirm3l/constructos/main/install.sh | ACTIVATION_CODE=ACT-XXXX-XXXX-XXXX-XXXX-XXXX INSTALL_OLLAMA=false bash
 ```
 
-Skip Ollama service in Linux deploy:
+Force host Ollama mode:
 ```bash
-IMAGE_TAG=main DEPLOY_WITH_OLLAMA=false bash ./scripts/deploy.sh
+IMAGE_TAG=main DEPLOY_OLLAMA_MODE=host bash ./scripts/deploy.sh
+```
+
+Force Docker Ollama with GPU (fallbacks automatically if unsupported):
+```bash
+IMAGE_TAG=main DEPLOY_OLLAMA_MODE=docker-gpu bash ./scripts/deploy.sh
+```
+
+Disable Ollama:
+```bash
+IMAGE_TAG=main DEPLOY_OLLAMA_MODE=none bash ./scripts/deploy.sh
 ```
 
 Manual install:
