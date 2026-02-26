@@ -254,6 +254,12 @@ install_cos_cli() {
     method="pipx"
   fi
 
+  if ! command -v python3 >/dev/null 2>&1; then
+    log_warn "python3 is not installed; skipping automatic COS CLI installation."
+    log_info "Install Python 3 first, then run: bash ${cos_install_script} --user --method ${method}"
+    return 0
+  fi
+
   if [[ "${method}" == "pipx" ]] && ! command -v pipx >/dev/null 2>&1; then
     log_warn "pipx not found; skipping automatic COS CLI installation."
     log_info "Install manually with: bash ${cos_install_script} --user --method pipx"

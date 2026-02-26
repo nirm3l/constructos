@@ -7,6 +7,15 @@ This repository contains the client-facing deployment package only.
 curl -fsSL https://raw.githubusercontent.com/nirm3l/constructos/main/install.sh | ACTIVATION_CODE=ACT-XXXX-XXXX-XXXX-XXXX-XXXX IMAGE_TAG=main INSTALL_COS=true AUTO_DEPLOY=1 bash
 ```
 
+## One-liner install (Windows PowerShell, native)
+```powershell
+$env:ACTIVATION_CODE='ACT-XXXX-XXXX-XXXX-XXXX-XXXX'
+$env:IMAGE_TAG='main'
+$env:INSTALL_COS='true'
+$env:AUTO_DEPLOY='1'
+iwr -UseBasicParsing https://raw.githubusercontent.com/nirm3l/constructos/main/install.ps1 | iex
+```
+
 ## Manual install
 ```bash
 git clone https://github.com/nirm3l/constructos.git
@@ -14,6 +23,13 @@ cd constructos
 ACTIVATION_CODE=ACT-XXXX-XXXX-XXXX-XXXX-XXXX IMAGE_TAG=main bash ./install.sh
 # or: set LICENSE_SERVER_TOKEN manually in .env, then deploy
 IMAGE_TAG=main bash ./scripts/deploy.sh
+```
+
+Windows PowerShell:
+```powershell
+git clone https://github.com/nirm3l/constructos.git
+cd constructos
+.\install.ps1 -ActivationCode 'ACT-XXXX-XXXX-XXXX-XXXX-XXXX' -ImageTag 'main' -AutoDeploy 'true'
 ```
 
 ## Runtime profiles
