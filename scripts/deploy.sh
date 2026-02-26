@@ -64,7 +64,7 @@ resolve_app_port() {
     app_port="$(resolve_compose_env_value "APP_PORT" || true)"
   fi
   if [[ -z "$app_port" ]]; then
-    app_port="8080"
+    app_port="1102"
   fi
   printf '%s' "$app_port"
 }
@@ -846,6 +846,7 @@ APP_URL="$(build_app_url "$APP_HOST_VALUE" "$APP_PORT_VALUE")"
 
 echo ""
 log_info "Open Constructos at: ${APP_URL}"
+log_info "Default admin credentials: username 'admin', password 'admin'. Change the password after first login."
 if can_auto_open_browser "$HOST_OS"; then
   log_info "Waiting for Constructos to become available (up to ${APP_OPEN_WAIT_TIMEOUT_SECONDS}s)..."
   if wait_for_app_ready "$APP_URL" "$APP_OPEN_WAIT_TIMEOUT_SECONDS"; then

@@ -715,10 +715,11 @@ CODEX_AUTH_FILE=$CodexAuthFile
     if ([string]::IsNullOrWhiteSpace($appHost) -or $appHost -eq "0.0.0.0" -or $appHost -eq "::") {
         $appHost = "localhost"
     }
-    $appPort = ([string](Get-SettingValue -Current "" -EnvName "APP_PORT" -DefaultValue "8080")).Trim()
+    $appPort = ([string](Get-SettingValue -Current "" -EnvName "APP_PORT" -DefaultValue "1102")).Trim()
     $appUrl = "http://$appHost`:$appPort"
 
     Write-Info "Open Constructos at: $appUrl"
+    Write-Info "Default admin credentials: username 'admin', password 'admin'. Change the password after first login."
     Write-Info "Waiting for Constructos to become available (up to 90s)..."
     if (Wait-AppReady -AppUrl $appUrl -TimeoutSeconds 90) {
         try {
@@ -870,7 +871,8 @@ try {
     Write-Host ""
     Write-Info "Constructos client files installed to: $installPath"
     Write-Info "Source: $archiveUrl"
-    Write-Info "After deploy, open Constructos at: http://localhost:8080"
+    Write-Info "After deploy, open Constructos at: http://localhost:1102"
+    Write-Info "Default admin credentials: username 'admin', password 'admin'. Change the password after first login."
     Write-Host ""
     Write-Host "Optional integrations:"
     Write-Host "- GitHub MCP: set GITHUB_PAT in .env, then set [mcp_servers.github].enabled = true in codex.config.toml and redeploy."
