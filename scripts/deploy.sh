@@ -352,6 +352,10 @@ host_ollama_reachable() {
   return 1
 }
 
+host_ollama_installed() {
+  command -v ollama >/dev/null 2>&1
+}
+
 detect_gpu_backend() {
   local host_os="$1"
 
@@ -416,14 +420,18 @@ resolve_runtime_ollama_mode() {
 
   case "$requested_mode" in
     auto)
+      if host_ollama_reachable; then
+        RESOLVED_OLLAMA_MODE="host"
+        return 0
+      fi
+      if host_ollama_installed; then
+        RESOLVED_OLLAMA_MODE="host"
+        return 0
+      fi
       gpu_backend="$(detect_gpu_backend "$host_os")"
       if [[ -n "$gpu_backend" ]]; then
         RESOLVED_OLLAMA_MODE="docker-gpu"
         OLLAMA_GPU_BACKEND="$gpu_backend"
-        return 0
-      fi
-      if host_ollama_reachable; then
-        RESOLVED_OLLAMA_MODE="host"
         return 0
       fi
       RESOLVED_OLLAMA_MODE="docker"

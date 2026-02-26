@@ -241,6 +241,35 @@ function Test-HostOllamaReachable {
     }
 }
 
+function Ensure-HostOllamaReachable {
+    param(
+        [int]$TimeoutSeconds = 20
+    )
+
+    if (Test-HostOllamaReachable) {
+        return $true
+    }
+
+    if (Test-CommandAvailable -Name "ollama") {
+        try {
+            Start-Process -FilePath "ollama" -ArgumentList "serve" -WindowStyle Hidden -ErrorAction SilentlyContinue | Out-Null
+        }
+        catch {
+            # Best-effort start only.
+        }
+    }
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-HostOllamaReachable) {
+            return $true
+        }
+        Start-Sleep -Seconds 1
+    }
+
+    return $false
+}
+
 function Resolve-RequestedOllamaMode {
     param(
         [string]$DeployOllamaMode,
@@ -342,14 +371,20 @@ function Resolve-RuntimeOllamaMode {
             return "docker"
         }
         "host" {
-            if (Test-HostOllamaReachable) {
+            if (Ensure-HostOllamaReachable -TimeoutSeconds 20) {
                 return "host"
             }
-            Write-WarnMessage "Host Ollama is not reachable on http://localhost:11434. Falling back to docker mode."
-            return "docker"
+            Write-WarnMessage "Host Ollama is not reachable on http://localhost:11434 right now."
+            Write-WarnMessage "Keeping host mode (docker Ollama image will not be pulled). Start Ollama and retry if embeddings are unavailable."
+            return "host"
         }
         default {
-            if (Test-HostOllamaReachable) {
+            if (Ensure-HostOllamaReachable -TimeoutSeconds 12) {
+                return "host"
+            }
+            if (Test-CommandAvailable -Name "ollama") {
+                Write-WarnMessage "Host Ollama is installed but not reachable yet on http://localhost:11434."
+                Write-WarnMessage "Keeping host mode (docker Ollama image will not be pulled). Start Ollama and retry if embeddings are unavailable."
                 return "host"
             }
             return "docker"
@@ -493,6 +528,14 @@ function Invoke-ConstructosDeploy {
         $services.Add("ollama")
     }
 
+    $dependencyServices = @("postgres", "kurrentdb", "neo4j")
+    $pullServices = New-Object System.Collections.Generic.List[string]
+    foreach ($serviceName in $services + $dependencyServices) {
+        if (-not $pullServices.Contains($serviceName)) {
+            $pullServices.Add($serviceName)
+        }
+    }
+
     $composeArgs = New-Object System.Collections.Generic.List[string]
     foreach ($file in $composeFiles) {
         $composeArgs.Add("-f")
@@ -524,16 +567,19 @@ CODEX_AUTH_FILE=$CodexAuthFile
     Write-Info "Target: windows-desktop"
     Write-Info "Ollama mode selected: $resolvedOllamaMode"
     Write-Info "Services: $($services -join ' ')"
+    Write-Info "Pull set: $($pullServices -join ' ')"
 
     Push-Location $InstallPath
     try {
-        $pullArgs = @("compose") + $composeArgs + @("--env-file", ".deploy.env", "pull", "--quiet") + $services
+        Write-Info "Pulling images (first run may take several minutes)..."
+        $pullArgs = @("compose") + $composeArgs + @("--env-file", ".deploy.env", "pull") + $pullServices
         & docker @pullArgs
         if ($LASTEXITCODE -ne 0) {
             throw "Pull images failed."
         }
 
-        $upArgs = @("compose") + $composeArgs + @("--env-file", ".deploy.env", "up", "-d", "--no-build", "--quiet-pull") + $services
+        Write-Info "Starting services..."
+        $upArgs = @("compose") + $composeArgs + @("--env-file", ".deploy.env", "up", "-d", "--no-build") + $services
         & docker @upArgs
         if ($LASTEXITCODE -ne 0) {
             throw "Start services failed."

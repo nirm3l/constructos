@@ -371,7 +371,7 @@ prompt_for_ollama_preference() {
     fi
 
     echo "Choose Ollama runtime:"
-    echo "1) Auto (recommended) - try Docker GPU, then host Ollama, then Docker CPU"
+    echo "1) Auto (recommended) - prefer host Ollama, then Docker GPU, then Docker CPU"
     echo "2) Host Ollama only"
     echo "3) Continue without Ollama"
     if [[ "$prompt_device" == "/dev/tty" ]]; then
