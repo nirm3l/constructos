@@ -657,7 +657,6 @@ if is_truthy "$AUTO_DEPLOY"; then
     DEPLOY_OLLAMA_MODE="$DEPLOY_OLLAMA_MODE" \
     bash ./scripts/deploy.sh
   )
-  log_info "Desktop app is available for installation at: https://github.com/nirm3l/constructos/releases"
   exit 0
 fi
 
@@ -683,8 +682,6 @@ else
   echo "4) IMAGE_TAG=${IMAGE_TAG} bash ./scripts/deploy.sh"
   echo "5) run 'cos --help' (if COS CLI was installed)"
 fi
-
-log_info "Desktop app is available for installation at: https://github.com/nirm3l/constructos/releases"
 
 echo ""
 echo "No-edit install (recommended):"

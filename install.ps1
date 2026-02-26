@@ -848,7 +848,6 @@ try {
         }
 
         Invoke-ConstructosDeploy -InstallPath $installPath -ImageTag $ImageTag -LicenseServerToken $LicenseServerToken -CodexConfigFile (Normalize-ComposePath -PathValue $CodexConfigFile) -CodexAuthFile (Normalize-ComposePath -PathValue $CodexAuthFile) -RequestedOllamaMode $requestedOllamaMode
-        Write-Info "Desktop app is available for installation at: https://github.com/nirm3l/constructos/releases"
         exit 0
     }
 
@@ -875,7 +874,6 @@ try {
         Write-Host "4) Rerun install.ps1 with AUTO_DEPLOY=1"
         Write-Host "5) Run 'cos --help' (if COS CLI was installed)"
     }
-    Write-Info "Desktop app is available for installation at: https://github.com/nirm3l/constructos/releases"
 }
 finally {
     if (Test-Path -LiteralPath $tmpArchive) {
