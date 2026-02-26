@@ -10,6 +10,8 @@ param(
     [string]$AutoDeploy = "",
     [string]$InstallCos = "",
     [string]$CosInstallMethod = "",
+    [string]$CosCliVersion = "",
+    [string]$CosCliWheelUrl = "",
     [string]$InstallOllama = "",
     [string]$DeployOllamaMode = "",
     [string]$DeployWithOllama = "",
@@ -430,7 +432,9 @@ function Install-CosCliIfNeeded {
     param(
         [string]$InstallPath,
         [string]$InstallCos,
-        [string]$Method
+        [string]$Method,
+        [string]$CosCliVersion,
+        [string]$CosCliWheelUrl
     )
 
     if (-not (Test-IsTruthy -Value $InstallCos)) {
@@ -438,56 +442,38 @@ function Install-CosCliIfNeeded {
         return
     }
 
+    if ([string]::IsNullOrWhiteSpace($CosCliWheelUrl)) {
+        Write-WarnMessage "COS_CLI_WHEEL_URL is empty; skipping COS CLI installation."
+        return
+    }
+
     if (-not (Test-CommandAvailable -Name "python") -and -not (Test-CommandAvailable -Name "python3")) {
         Write-WarnMessage "Python is not installed; skipping automatic COS CLI installation."
-        Write-Info "Install Python 3 first, then install COS manually."
+        Write-Info "Install Python 3 first, then run: pipx install --force `"$CosCliWheelUrl`""
         return
     }
 
     $effectiveMethod = ([string]$Method).Trim().ToLowerInvariant()
-    if ($effectiveMethod -ne "pipx" -and $effectiveMethod -ne "link") {
-        Write-WarnMessage "Unsupported COS_INSTALL_METHOD=$Method. Falling back to pipx."
-        $effectiveMethod = "pipx"
-    }
-
-    if ($effectiveMethod -eq "link") {
-        Write-WarnMessage "COS_INSTALL_METHOD=link is not supported natively on Windows. Falling back to pipx."
+    if ($effectiveMethod -ne "pipx") {
+        Write-WarnMessage "COS_INSTALL_METHOD=$Method is not supported for artifact installs. Falling back to pipx."
         $effectiveMethod = "pipx"
     }
 
     if (-not (Test-CommandAvailable -Name "pipx")) {
         Write-WarnMessage "pipx not found; skipping automatic COS CLI installation."
-        Write-Info "Install pipx, then run: pipx install --force `"$InstallPath/tools/cos`""
+        Write-Info "Install pipx, then run: pipx install --force `"$CosCliWheelUrl`""
         return
     }
 
-    $cosPath = Join-Path $InstallPath "tools/cos"
-    if (-not (Test-Path -LiteralPath $cosPath)) {
-        Write-WarnMessage "COS source path not found at $cosPath; skipping COS installation."
-        return
-    }
-
-    Write-Info "Installing COS CLI (method=pipx)..."
-    & pipx install --force $cosPath
+    $resolvedVersion = if ([string]::IsNullOrWhiteSpace($CosCliVersion)) { "latest" } else { $CosCliVersion }
+    Write-Info "Installing COS CLI (constructos-cli $resolvedVersion) from artifact..."
+    & pipx install --force $CosCliWheelUrl
     if ($LASTEXITCODE -ne 0) {
-        Write-WarnMessage "COS CLI installation failed; continuing without blocking deployment."
+        Write-WarnMessage "COS CLI installation failed from $CosCliWheelUrl; continuing without blocking deployment."
         return
-    }
-
-    $ensurePathOk = $true
-    try {
-        & pipx ensurepath *> $null
-        if ($LASTEXITCODE -ne 0) {
-            $ensurePathOk = $false
-        }
-    }
-    catch {
-        $ensurePathOk = $false
-    }
-    if (-not $ensurePathOk) {
-        Write-WarnMessage "pipx ensurepath reported a warning. Open a new terminal if 'cos' is not recognized."
     }
     Write-Info "COS CLI installation completed."
+    Write-Info "If 'cos' is not recognized, run 'pipx ensurepath' and open a new terminal."
 }
 
 function Wait-AppReady {
@@ -692,6 +678,8 @@ CODEX_AUTH_FILE=$CodexAuthFile
             throw "Pull images failed."
         }
 
+        Ensure-CodexAuthFile -CodexConfigFile $CodexConfigFile -CodexAuthFile $CodexAuthFile -ImageTag $ImageTag
+
         Write-Info "Starting services..."
         $upArgs = @("compose") + $composeArgs + @("--env-file", ".deploy.env", "up", "-d", "--no-build") + $services
         & docker @upArgs
@@ -751,6 +739,9 @@ $LicenseServerUrl = Get-SettingValue -Current $LicenseServerUrl -EnvName "LICENS
 $AutoDeploy = Get-SettingValue -Current $AutoDeploy -EnvName "AUTO_DEPLOY" -DefaultValue "false"
 $InstallCos = Get-SettingValue -Current $InstallCos -EnvName "INSTALL_COS" -DefaultValue "true"
 $CosInstallMethod = Get-SettingValue -Current $CosInstallMethod -EnvName "COS_INSTALL_METHOD" -DefaultValue "pipx"
+$CosCliVersion = Get-SettingValue -Current $CosCliVersion -EnvName "COS_CLI_VERSION" -DefaultValue "0.1.1"
+$defaultCosCliWheelUrl = "https://github.com/nirm3l/m4tr1x/releases/download/cos-v{0}/constructos_cli-{0}-py3-none-any.whl" -f $CosCliVersion
+$CosCliWheelUrl = Get-SettingValue -Current $CosCliWheelUrl -EnvName "COS_CLI_WHEEL_URL" -DefaultValue $defaultCosCliWheelUrl
 $InstallOllama = Get-SettingValue -Current $InstallOllama -EnvName "INSTALL_OLLAMA" -DefaultValue "auto"
 $DeployOllamaMode = Get-SettingValue -Current $DeployOllamaMode -EnvName "DEPLOY_OLLAMA_MODE" -DefaultValue ""
 $DeployWithOllama = Get-SettingValue -Current $DeployWithOllama -EnvName "DEPLOY_WITH_OLLAMA" -DefaultValue ""
@@ -841,7 +832,7 @@ try {
     }
 
     Install-OllamaIfNeeded -ResolvedMode $requestedOllamaMode -InstallOllama $InstallOllama
-    Install-CosCliIfNeeded -InstallPath $installPath -InstallCos $InstallCos -Method $CosInstallMethod
+    Install-CosCliIfNeeded -InstallPath $installPath -InstallCos $InstallCos -Method $CosInstallMethod -CosCliVersion $CosCliVersion -CosCliWheelUrl $CosCliWheelUrl
     Write-Info "Selected Ollama deploy mode: $requestedOllamaMode"
 
     if (Test-IsTruthy -Value $AutoDeploy) {
@@ -856,7 +847,6 @@ try {
             $CodexAuthFile = Resolve-AbsolutePath -PathValue "$HOME/.codex/auth.json" -BasePath $installPath
         }
 
-        Ensure-CodexAuthFile -CodexConfigFile $CodexConfigFile -CodexAuthFile $CodexAuthFile -ImageTag $ImageTag
         Invoke-ConstructosDeploy -InstallPath $installPath -ImageTag $ImageTag -LicenseServerToken $LicenseServerToken -CodexConfigFile (Normalize-ComposePath -PathValue $CodexConfigFile) -CodexAuthFile (Normalize-ComposePath -PathValue $CodexAuthFile) -RequestedOllamaMode $requestedOllamaMode
         exit 0
     }

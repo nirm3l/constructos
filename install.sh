@@ -12,6 +12,8 @@ LICENSE_SERVER_URL="${LICENSE_SERVER_URL:-https://licence.constructos.dev}"
 AUTO_DEPLOY="${AUTO_DEPLOY:-false}"
 INSTALL_COS="${INSTALL_COS:-true}"
 COS_INSTALL_METHOD="${COS_INSTALL_METHOD:-pipx}"
+COS_CLI_VERSION="${COS_CLI_VERSION:-0.1.1}"
+COS_CLI_WHEEL_URL="${COS_CLI_WHEEL_URL:-https://github.com/nirm3l/m4tr1x/releases/download/cos-v${COS_CLI_VERSION}/constructos_cli-${COS_CLI_VERSION}-py3-none-any.whl}"
 INSTALL_OLLAMA="${INSTALL_OLLAMA:-auto}"
 DEPLOY_OLLAMA_MODE="${DEPLOY_OLLAMA_MODE:-}"
 DEPLOY_WITH_OLLAMA="${DEPLOY_WITH_OLLAMA:-}"
@@ -235,44 +237,43 @@ prepare_env_file() {
 }
 
 install_cos_cli() {
-  local install_path="$1"
   local method="${COS_INSTALL_METHOD}"
-  local cos_install_script="${install_path}/tools/cos/scripts/install.sh"
+  local wheel_url="${COS_CLI_WHEEL_URL}"
 
   if ! is_truthy "${INSTALL_COS}"; then
     log_info "Skipping COS CLI installation (INSTALL_COS=${INSTALL_COS})."
     return 0
   fi
 
-  if [[ ! -f "${cos_install_script}" ]]; then
-    log_warn "COS CLI install script not found at ${cos_install_script}; skipping."
+  if [[ -z "${wheel_url}" ]]; then
+    log_warn "COS_CLI_WHEEL_URL is empty; skipping COS CLI installation."
     return 0
   fi
 
-  if [[ "${method}" != "pipx" && "${method}" != "link" ]]; then
-    log_warn "Unsupported COS_INSTALL_METHOD=${method}. Allowed: pipx, link. Falling back to pipx."
+  if [[ "${method}" != "pipx" ]]; then
+    log_warn "COS_INSTALL_METHOD=${method} is not supported for artifact installs. Falling back to pipx."
     method="pipx"
   fi
 
   if ! command -v python3 >/dev/null 2>&1; then
     log_warn "python3 is not installed; skipping automatic COS CLI installation."
-    log_info "Install Python 3 first, then run: bash ${cos_install_script} --user --method ${method}"
+    log_info "Install Python 3 first, then run: pipx install --force ${wheel_url}"
     return 0
   fi
 
-  if [[ "${method}" == "pipx" ]] && ! command -v pipx >/dev/null 2>&1; then
+  if ! command -v pipx >/dev/null 2>&1; then
     log_warn "pipx not found; skipping automatic COS CLI installation."
-    log_info "Install manually with: bash ${cos_install_script} --user --method pipx"
+    log_info "Install manually with: pipx install --force ${wheel_url}"
     return 0
   fi
 
-  log_info "Installing COS CLI (method=${method})..."
-  if bash "${cos_install_script}" --user --method "${method}"; then
+  log_info "Installing COS CLI (constructos-cli ${COS_CLI_VERSION}) from artifact..."
+  if pipx install --force "${wheel_url}"; then
     log_info "COS CLI installation completed."
     return 0
   fi
 
-  log_warn "COS CLI installation failed; continuing without blocking core deployment."
+  log_warn "COS CLI installation failed from ${wheel_url}; continuing without blocking core deployment."
   return 0
 }
 
@@ -632,7 +633,7 @@ if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then
 fi
 
 install_ollama
-install_cos_cli "$INSTALL_DIR"
+install_cos_cli
 log_info "Selected Ollama deploy mode: ${DEPLOY_OLLAMA_MODE}"
 
 if [[ -n "$CODEX_AUTH_FILE" && ! -f "$CODEX_AUTH_FILE" ]]; then
