@@ -9,12 +9,9 @@ param(
     [string]$LicenseServerUrl = "",
     [string]$AutoDeploy = "",
     [string]$InstallCos = "",
-    [string]$InstallDesktopApp = "",
     [string]$CosInstallMethod = "",
     [string]$CosCliVersion = "",
     [string]$CosCliWheelUrl = "",
-    [string]$DesktopReleaseRepo = "",
-    [string]$DesktopReleaseTag = "",
     [string]$InstallOllama = "",
     [string]$DeployOllamaMode = "",
     [string]$DeployWithOllama = "",
@@ -40,33 +37,6 @@ function Get-SettingValue {
         return ([string]$envValue).Trim()
     }
     return $DefaultValue
-}
-
-function Get-DesktopReleaseToken {
-    $candidates = @(
-        [Environment]::GetEnvironmentVariable("DESKTOP_RELEASE_TOKEN"),
-        [Environment]::GetEnvironmentVariable("GITHUB_TOKEN"),
-        [Environment]::GetEnvironmentVariable("GITHUB_PAT")
-    )
-
-    foreach ($candidate in $candidates) {
-        $text = ([string]$candidate).Trim()
-        if (-not [string]::IsNullOrWhiteSpace($text)) {
-            return $text
-        }
-    }
-    return ""
-}
-
-function Get-GitHubApiHeaders {
-    $headers = @{
-        "Accept" = "application/vnd.github+json"
-    }
-    $token = Get-DesktopReleaseToken
-    if (-not [string]::IsNullOrWhiteSpace($token)) {
-        $headers["Authorization"] = "Bearer $token"
-    }
-    return $headers
 }
 
 function Write-Info {
@@ -130,26 +100,6 @@ function Normalize-OllamaMode {
         "false" { return "none" }
         "no" { return "none" }
         "off" { return "none" }
-        default { return "invalid" }
-    }
-}
-
-function Normalize-DesktopInstallMode {
-    param([string]$Value)
-    $normalized = ([string]$Value).Trim().ToLowerInvariant()
-    switch ($normalized) {
-        "" { return "ask" }
-        "ask" { return "ask" }
-        "always" { return "always" }
-        "1" { return "always" }
-        "true" { return "always" }
-        "yes" { return "always" }
-        "on" { return "always" }
-        "skip" { return "skip" }
-        "0" { return "skip" }
-        "false" { return "skip" }
-        "no" { return "skip" }
-        "off" { return "skip" }
         default { return "invalid" }
     }
 }
@@ -569,145 +519,6 @@ function Confirm-YesNo {
     return $normalized -in @("y", "yes")
 }
 
-function Resolve-DesktopReleaseApiUrl {
-    param(
-        [string]$DesktopReleaseRepo,
-        [string]$DesktopReleaseTag
-    )
-    if ([string]::IsNullOrWhiteSpace($DesktopReleaseRepo)) {
-        return ""
-    }
-    if ([string]::IsNullOrWhiteSpace($DesktopReleaseTag) -or $DesktopReleaseTag -eq "desktop-latest") {
-        return "https://api.github.com/repos/$DesktopReleaseRepo/releases?per_page=30"
-    }
-    if ($DesktopReleaseTag -eq "latest") {
-        return "https://api.github.com/repos/$DesktopReleaseRepo/releases/latest"
-    }
-    return "https://api.github.com/repos/$DesktopReleaseRepo/releases/tags/$DesktopReleaseTag"
-}
-
-function Get-DesktopInstallerUrl {
-    param(
-        [string]$DesktopReleaseRepo,
-        [string]$DesktopReleaseTag
-    )
-
-    $apiUrl = Resolve-DesktopReleaseApiUrl -DesktopReleaseRepo $DesktopReleaseRepo -DesktopReleaseTag $DesktopReleaseTag
-    if ([string]::IsNullOrWhiteSpace($apiUrl)) {
-        return ""
-    }
-
-    try {
-        $headers = Get-GitHubApiHeaders
-        $releasePayload = Invoke-RestMethod -Method Get -Uri $apiUrl -Headers $headers -UseBasicParsing
-    }
-    catch {
-        return ""
-    }
-
-    $release = $null
-    if ($releasePayload -is [System.Array]) {
-        if ([string]::IsNullOrWhiteSpace($DesktopReleaseTag) -or $DesktopReleaseTag -eq "desktop-latest") {
-            $release = $releasePayload |
-                Where-Object {
-                    $tagName = ([string]$_.tag_name).Trim().ToLowerInvariant()
-                    -not [bool]$_.draft -and -not [bool]$_.prerelease -and $tagName.StartsWith("desktop-v")
-                } |
-                Select-Object -First 1
-        }
-        else {
-            $release = $releasePayload |
-                Where-Object { ([string]$_.tag_name).Trim() -eq $DesktopReleaseTag } |
-                Select-Object -First 1
-        }
-    }
-    else {
-        $release = $releasePayload
-    }
-
-    if ($null -eq $release) {
-        return ""
-    }
-
-    $assets = @($release.assets)
-    if ($assets.Count -eq 0) {
-        return ""
-    }
-
-    $asset = $assets |
-        Where-Object {
-            $url = ([string]$_.browser_download_url).Trim()
-            if ([string]::IsNullOrWhiteSpace($url)) {
-                return $false
-            }
-            $pathOnly = ($url -split '\?')[0]
-            return $pathOnly -match '\.exe$'
-        } |
-        Select-Object -First 1
-
-    if ($null -eq $asset) {
-        return ""
-    }
-    return ([string]$asset.browser_download_url).Trim()
-}
-
-function Install-DesktopAppIfNeeded {
-    param(
-        [string]$InstallDesktopApp,
-        [string]$DesktopReleaseRepo,
-        [string]$DesktopReleaseTag
-    )
-
-    $mode = Normalize-DesktopInstallMode -Value $InstallDesktopApp
-    if ($mode -eq "invalid") {
-        Write-WarnMessage "Unsupported INSTALL_DESKTOP_APP=$InstallDesktopApp. Allowed: ask, always, skip."
-        $mode = "ask"
-    }
-
-    if ($mode -eq "skip") {
-        Write-Info "Skipping desktop app installation (INSTALL_DESKTOP_APP=skip)."
-        return
-    }
-
-    if ($mode -eq "ask") {
-        if (-not (Test-InteractiveSession)) {
-            Write-Info "Non-interactive shell detected. Skipping desktop app prompt."
-            Write-Info "Set INSTALL_DESKTOP_APP=always to install desktop app automatically."
-            return
-        }
-        if (-not (Confirm-YesNo -Prompt "Install ConstructOS desktop app now?" -DefaultYes $true)) {
-            Write-Info "Desktop app installation skipped by user."
-            return
-        }
-    }
-
-    $installerUrl = Get-DesktopInstallerUrl -DesktopReleaseRepo $DesktopReleaseRepo -DesktopReleaseTag $DesktopReleaseTag
-    if ([string]::IsNullOrWhiteSpace($installerUrl)) {
-        Write-WarnMessage "Desktop installer asset was not found in $DesktopReleaseRepo@$DesktopReleaseTag."
-        Write-WarnMessage "Set DESKTOP_RELEASE_REPO / DESKTOP_RELEASE_TAG if needed."
-        return
-    }
-
-    $installerPath = Join-Path ([System.IO.Path]::GetTempPath()) ("constructos-desktop-{0}.exe" -f ([Guid]::NewGuid().ToString("N")))
-    try {
-        $headers = Get-GitHubApiHeaders
-        Invoke-WebRequest -Uri $installerUrl -Headers $headers -OutFile $installerPath -UseBasicParsing
-    }
-    catch {
-        Write-WarnMessage "Failed to download desktop installer: $installerUrl"
-        return
-    }
-
-    Write-Info "Launching desktop installer: $installerPath"
-    try {
-        Start-Process -FilePath $installerPath | Out-Null
-    }
-    catch {
-        Write-WarnMessage "Could not launch desktop installer automatically."
-        Write-Info "Run it manually from: $installerPath"
-    }
-}
-
 function Ensure-CodexAuthFile {
     param(
         [string]$CodexConfigFile,
@@ -927,13 +738,10 @@ $ActivationCode = Get-SettingValue -Current $ActivationCode -EnvName "ACTIVATION
 $LicenseServerUrl = Get-SettingValue -Current $LicenseServerUrl -EnvName "LICENSE_SERVER_URL" -DefaultValue "https://licence.constructos.dev"
 $AutoDeploy = Get-SettingValue -Current $AutoDeploy -EnvName "AUTO_DEPLOY" -DefaultValue "false"
 $InstallCos = Get-SettingValue -Current $InstallCos -EnvName "INSTALL_COS" -DefaultValue "true"
-$InstallDesktopApp = Get-SettingValue -Current $InstallDesktopApp -EnvName "INSTALL_DESKTOP_APP" -DefaultValue "ask"
 $CosInstallMethod = Get-SettingValue -Current $CosInstallMethod -EnvName "COS_INSTALL_METHOD" -DefaultValue "pipx"
 $CosCliVersion = Get-SettingValue -Current $CosCliVersion -EnvName "COS_CLI_VERSION" -DefaultValue "0.1.2"
 $defaultCosCliWheelUrl = "https://github.com/nirm3l/constructos/releases/download/cos-v{0}/constructos_cli-{0}-py3-none-any.whl" -f $CosCliVersion
 $CosCliWheelUrl = Get-SettingValue -Current $CosCliWheelUrl -EnvName "COS_CLI_WHEEL_URL" -DefaultValue $defaultCosCliWheelUrl
-$DesktopReleaseRepo = Get-SettingValue -Current $DesktopReleaseRepo -EnvName "DESKTOP_RELEASE_REPO" -DefaultValue "nirm3l/constructos"
-$DesktopReleaseTag = Get-SettingValue -Current $DesktopReleaseTag -EnvName "DESKTOP_RELEASE_TAG" -DefaultValue "desktop-latest"
 $InstallOllama = Get-SettingValue -Current $InstallOllama -EnvName "INSTALL_OLLAMA" -DefaultValue "auto"
 $DeployOllamaMode = Get-SettingValue -Current $DeployOllamaMode -EnvName "DEPLOY_OLLAMA_MODE" -DefaultValue ""
 $DeployWithOllama = Get-SettingValue -Current $DeployWithOllama -EnvName "DEPLOY_WITH_OLLAMA" -DefaultValue ""
@@ -1040,7 +848,7 @@ try {
         }
 
         Invoke-ConstructosDeploy -InstallPath $installPath -ImageTag $ImageTag -LicenseServerToken $LicenseServerToken -CodexConfigFile (Normalize-ComposePath -PathValue $CodexConfigFile) -CodexAuthFile (Normalize-ComposePath -PathValue $CodexAuthFile) -RequestedOllamaMode $requestedOllamaMode
-        Install-DesktopAppIfNeeded -InstallDesktopApp $InstallDesktopApp -DesktopReleaseRepo $DesktopReleaseRepo -DesktopReleaseTag $DesktopReleaseTag
+        Write-Info "Desktop app is available for installation at: https://github.com/nirm3l/constructos/releases"
         exit 0
     }
 
@@ -1067,7 +875,7 @@ try {
         Write-Host "4) Rerun install.ps1 with AUTO_DEPLOY=1"
         Write-Host "5) Run 'cos --help' (if COS CLI was installed)"
     }
-    Install-DesktopAppIfNeeded -InstallDesktopApp $InstallDesktopApp -DesktopReleaseRepo $DesktopReleaseRepo -DesktopReleaseTag $DesktopReleaseTag
+    Write-Info "Desktop app is available for installation at: https://github.com/nirm3l/constructos/releases"
 }
 finally {
     if (Test-Path -LiteralPath $tmpArchive) {
