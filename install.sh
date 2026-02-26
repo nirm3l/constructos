@@ -447,14 +447,18 @@ desktop_release_asset_url() {
   if ! command -v python3 >/dev/null 2>&1; then
     return 1
   fi
-  printf '%s' "$payload" | python3 - "$host_os" "${DESKTOP_RELEASE_TAG}" <<'PY'
+  RELEASE_PAYLOAD="$payload" python3 - "$host_os" "${DESKTOP_RELEASE_TAG}" <<'PY'
 import json
+import os
 import sys
 
 host_os = (sys.argv[1] if len(sys.argv) > 1 else "").strip().lower()
 release_tag = (sys.argv[2] if len(sys.argv) > 2 else "").strip()
+payload_raw = os.environ.get("RELEASE_PAYLOAD", "")
+if not payload_raw:
+    sys.exit(0)
 try:
-    payload = json.load(sys.stdin)
+    payload = json.loads(payload_raw)
 except Exception:
     sys.exit(0)
 
