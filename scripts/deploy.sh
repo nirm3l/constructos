@@ -36,15 +36,15 @@ if [[ -t 2 && -z "${NO_COLOR:-}" ]]; then
 fi
 
 log_info() {
-  printf '%b[INFO] %s%b\n' "$LOG_COLOR_INFO" "$*" "$LOG_COLOR_RESET"
+  printf '%b%s%b\n' "$LOG_COLOR_INFO" "[INFO] $*" "$LOG_COLOR_RESET"
 }
 
 log_warn() {
-  printf '%b[WARN] %s%b\n' "$LOG_COLOR_WARN" "$*" "$LOG_COLOR_RESET" >&2
+  printf '%b%s%b\n' "$LOG_COLOR_WARN" "[WARN] $*" "$LOG_COLOR_RESET" >&2
 }
 
 log_error() {
-  printf '%b[ERROR] %s%b\n' "$LOG_COLOR_ERROR" "$*" "$LOG_COLOR_RESET" >&2
+  printf '%b%s%b\n' "$LOG_COLOR_ERROR" "[ERROR] $*" "$LOG_COLOR_RESET" >&2
 }
 
 resolve_app_host() {
@@ -458,8 +458,52 @@ run_compose_step() {
   shift
 
   local output_file
+  local step_status=0
+  local step_pid=0
+  local frame=0
+  local shimmer_width=20
+  local shimmer_position=0
+  local shimmer_bar=""
+  local index=0
   output_file="$(mktemp "${TMPDIR:-/tmp}/constructos-deploy.XXXXXX.log")"
-  if "$@" >"$output_file" 2>&1; then
+
+  if [[ -t 1 ]]; then
+    "$@" >"$output_file" 2>&1 &
+    step_pid=$!
+    while kill -0 "$step_pid" 2>/dev/null; do
+      shimmer_position=$((frame % shimmer_width))
+      shimmer_bar=""
+      for ((index = 0; index < shimmer_width; index++)); do
+        if ((index == shimmer_position)); then
+          shimmer_bar="${shimmer_bar}>"
+        else
+          shimmer_bar="${shimmer_bar}."
+        fi
+      done
+      if [[ -n "$LOG_COLOR_INFO" ]]; then
+        printf '\r%b%s%b' "$LOG_COLOR_INFO" "[INFO] ${step_title}: running [${shimmer_bar}]" "$LOG_COLOR_RESET"
+      else
+        printf '\r%s' "[INFO] ${step_title}: running [${shimmer_bar}]"
+      fi
+      frame=$((frame + 1))
+      sleep 0.12
+    done
+
+    if wait "$step_pid"; then
+      step_status=0
+    else
+      step_status=$?
+    fi
+    printf '\r\033[2K'
+  else
+    if "$@" >"$output_file" 2>&1; then
+      step_status=0
+    else
+      step_status=$?
+    fi
+  fi
+
+  if [[ "$step_status" -eq 0 ]]; then
     rm -f "$output_file"
     log_info "${step_title}: done."
     return 0
