@@ -177,7 +177,7 @@ install_ollama() {
 json_extract_field() {
   local field_name="$1"
   if command -v python3 >/dev/null 2>&1; then
-    python3 - "$field_name" <<'PY'
+    python3 -c '
 import json
 import sys
 
@@ -188,12 +188,11 @@ except Exception:
     sys.exit(0)
 
 value = payload.get(field_name, "")
-if value is None:
+if value is None or isinstance(value, (dict, list)):
     sys.exit(0)
-if isinstance(value, (dict, list)):
-    sys.exit(0)
+
 print(str(value))
-PY
+' "$field_name"
     return 0
   fi
   sed -n "s/.*\"${field_name}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" | head -n 1
