@@ -19,17 +19,32 @@ TARGET_RESOLVED=""
 REQUESTED_OLLAMA_MODE=""
 RESOLVED_OLLAMA_MODE=""
 OLLAMA_GPU_BACKEND=""
+APP_OPEN_WAIT_TIMEOUT_SECONDS="${APP_OPEN_WAIT_TIMEOUT_SECONDS:-90}"
+LOG_COLOR_RESET=""
+LOG_COLOR_INFO=""
+LOG_COLOR_WARN=""
+LOG_COLOR_ERROR=""
+
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  LOG_COLOR_RESET=$'\033[0m'
+  LOG_COLOR_INFO=$'\033[1;32m'
+fi
+
+if [[ -t 2 && -z "${NO_COLOR:-}" ]]; then
+  LOG_COLOR_WARN=$'\033[1;33m'
+  LOG_COLOR_ERROR=$'\033[1;31m'
+fi
 
 log_info() {
-  echo "[INFO] $*"
+  printf '%b[INFO] %s%b\n' "$LOG_COLOR_INFO" "$*" "$LOG_COLOR_RESET"
 }
 
 log_warn() {
-  echo "[WARN] $*" >&2
+  printf '%b[WARN] %s%b\n' "$LOG_COLOR_WARN" "$*" "$LOG_COLOR_RESET" >&2
 }
 
 log_error() {
-  echo "[ERROR] $*" >&2
+  printf '%b[ERROR] %s%b\n' "$LOG_COLOR_ERROR" "$*" "$LOG_COLOR_RESET" >&2
 }
 
 resolve_app_host() {
@@ -57,16 +72,70 @@ resolve_app_port() {
 build_app_url() {
   local app_host="$1"
   local app_port="$2"
+  case "$app_host" in
+    "" | "0.0.0.0" | "::" | "[::]")
+      app_host="localhost"
+      ;;
+  esac
   printf 'http://%s:%s' "$app_host" "$app_port"
+}
+
+can_auto_open_browser() {
+  local host_os="$1"
+
+  if [[ "${CI:-}" == "true" || "${CI:-}" == "1" ]]; then
+    return 1
+  fi
+
+  case "$host_os" in
+    macos)
+      command -v open >/dev/null 2>&1
+      return $?
+      ;;
+    linux)
+      command -v xdg-open >/dev/null 2>&1
+      return $?
+      ;;
+    windows)
+      if command -v cmd.exe >/dev/null 2>&1; then
+        return 0
+      fi
+      if command -v powershell.exe >/dev/null 2>&1; then
+        return 0
+      fi
+      return 1
+      ;;
+  esac
+
+  return 1
+}
+
+wait_for_app_ready() {
+  local app_url="$1"
+  local timeout_seconds="$2"
+  local elapsed_seconds=0
+  local interval_seconds=2
+  local http_status=""
+
+  if ! command -v curl >/dev/null 2>&1; then
+    return 2
+  fi
+
+  while (( elapsed_seconds < timeout_seconds )); do
+    http_status="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 4 "$app_url" || true)"
+    if [[ "$http_status" =~ ^[1-5][0-9][0-9]$ ]] && [[ "$http_status" != "000" ]]; then
+      return 0
+    fi
+    sleep "$interval_seconds"
+    elapsed_seconds=$((elapsed_seconds + interval_seconds))
+  done
+
+  return 1
 }
 
 open_app_url() {
   local app_url="$1"
   local host_os="$2"
-
-  if [[ "${CI:-}" == "true" || "${CI:-}" == "1" ]]; then
-    return 1
-  fi
 
   case "$host_os" in
     macos)
@@ -573,10 +642,21 @@ APP_URL="$(build_app_url "$APP_HOST_VALUE" "$APP_PORT_VALUE")"
 
 echo ""
 log_info "Open Constructos at: ${APP_URL}"
-if open_app_url "$APP_URL" "$HOST_OS"; then
-  log_info "Opened Constructos in your default browser."
+if can_auto_open_browser "$HOST_OS"; then
+  log_info "Waiting for Constructos to become available (up to ${APP_OPEN_WAIT_TIMEOUT_SECONDS}s)..."
+  if wait_for_app_ready "$APP_URL" "$APP_OPEN_WAIT_TIMEOUT_SECONDS"; then
+    if open_app_url "$APP_URL" "$HOST_OS"; then
+      log_info "Opened Constructos in your default browser."
+    else
+      log_info "If browser did not open automatically, open this URL manually."
+    fi
+  else
+    log_warn "Constructos is not reachable yet at ${APP_URL}."
+    log_info "Open it manually once startup finishes."
+  fi
 else
-  log_info "If browser did not open automatically, open this URL manually."
+  log_info "Browser auto-open is unavailable in this environment."
+  log_info "Open this URL manually."
 fi
 
 echo ""

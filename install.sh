@@ -26,24 +26,24 @@ LOG_COLOR_ERROR=""
 
 if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
   LOG_COLOR_RESET=$'\033[0m'
-  LOG_COLOR_INFO=$'\033[32m'
+  LOG_COLOR_INFO=$'\033[1;32m'
 fi
 
 if [[ -t 2 && -z "${NO_COLOR:-}" ]]; then
-  LOG_COLOR_WARN=$'\033[33m'
-  LOG_COLOR_ERROR=$'\033[31m'
+  LOG_COLOR_WARN=$'\033[1;33m'
+  LOG_COLOR_ERROR=$'\033[1;31m'
 fi
 
 log_info() {
-  printf '%b[INFO]%b %s\n' "$LOG_COLOR_INFO" "$LOG_COLOR_RESET" "$*"
+  printf '%b[INFO] %s%b\n' "$LOG_COLOR_INFO" "$*" "$LOG_COLOR_RESET"
 }
 
 log_warn() {
-  printf '%b[WARN]%b %s\n' "$LOG_COLOR_WARN" "$LOG_COLOR_RESET" "$*" >&2
+  printf '%b[WARN] %s%b\n' "$LOG_COLOR_WARN" "$*" "$LOG_COLOR_RESET" >&2
 }
 
 log_error() {
-  printf '%b[ERROR]%b %s\n' "$LOG_COLOR_ERROR" "$LOG_COLOR_RESET" "$*" >&2
+  printf '%b[ERROR] %s%b\n' "$LOG_COLOR_ERROR" "$*" "$LOG_COLOR_RESET" >&2
 }
 
 is_truthy() {
