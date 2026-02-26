@@ -684,9 +684,6 @@ function Install-DesktopAppIfNeeded {
     $installerUrl = Get-DesktopInstallerUrl -DesktopReleaseRepo $DesktopReleaseRepo -DesktopReleaseTag $DesktopReleaseTag
     if ([string]::IsNullOrWhiteSpace($installerUrl)) {
         Write-WarnMessage "Desktop installer asset was not found in $DesktopReleaseRepo@$DesktopReleaseTag."
-        if ([string]::IsNullOrWhiteSpace((Get-DesktopReleaseToken))) {
-            Write-WarnMessage "If the release repository is private, set GITHUB_PAT, GITHUB_TOKEN, or DESKTOP_RELEASE_TOKEN."
-        }
         Write-WarnMessage "Set DESKTOP_RELEASE_REPO / DESKTOP_RELEASE_TAG if needed."
         return
     }

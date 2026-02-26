@@ -521,11 +521,9 @@ install_desktop_app() {
   local asset_url=""
   asset_url="$(desktop_release_asset_url "$host_os" || true)"
   if [[ -z "$asset_url" ]]; then
-    local token=""
-    token="$(desktop_release_token || true)"
     log_warn "Desktop installer asset was not found for host OS (${host_os}) in ${DESKTOP_RELEASE_REPO}@${DESKTOP_RELEASE_TAG}."
-    if [[ -z "$token" ]]; then
-      log_warn "If the release repository is private, set GITHUB_PAT, GITHUB_TOKEN, or DESKTOP_RELEASE_TOKEN."
+    if ! command -v python3 >/dev/null 2>&1; then
+      log_warn "python3 is required to resolve desktop release assets automatically."
     fi
     log_warn "Set DESKTOP_RELEASE_REPO / DESKTOP_RELEASE_TAG if needed."
     return 0
