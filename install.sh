@@ -547,6 +547,7 @@ exchange_license_token() {
   local activation_code="$1"
   local base_url="${LICENSE_SERVER_URL%/}"
   local endpoint="${base_url}/v1/install/exchange"
+  local exchange_operating_system="${HOST_OS:-unknown}"
   local request_payload
   local response
   local status
@@ -554,7 +555,17 @@ exchange_license_token() {
   local exchanged_token
   local detail
 
-  request_payload="$(printf '{"activation_code":"%s"}' "$(printf '%s' "$activation_code" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')")"
+  case "$exchange_operating_system" in
+    linux | macos | windows)
+      ;;
+    *)
+      exchange_operating_system="unknown"
+      ;;
+  esac
+
+  request_payload="$(printf '{"activation_code":"%s","operating_system":"%s"}' \
+    "$(printf '%s' "$activation_code" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')" \
+    "$(printf '%s' "$exchange_operating_system" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')")"
 
   if ! response="$(curl -sS -X POST "$endpoint" -H "Content-Type: application/json" --data "$request_payload" -w $'\n%{http_code}')"; then
     log_error "Failed to reach license server endpoint: ${endpoint}"

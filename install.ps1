@@ -104,6 +104,19 @@ function Normalize-OllamaMode {
     }
 }
 
+function Resolve-HostOperatingSystem {
+    if ($IsWindows) {
+        return "windows"
+    }
+    if ($IsMacOS) {
+        return "macos"
+    }
+    if ($IsLinux) {
+        return "linux"
+    }
+    return "unknown"
+}
+
 function Resolve-AbsolutePath {
     param(
         [string]$PathValue,
@@ -781,7 +794,10 @@ try {
     $exchangedImageTag = ""
     if ([string]::IsNullOrWhiteSpace($LicenseServerToken) -and -not [string]::IsNullOrWhiteSpace($ActivationCode)) {
         $endpoint = "{0}/v1/install/exchange" -f $LicenseServerUrl.TrimEnd("/")
-        $payload = @{ activation_code = $ActivationCode } | ConvertTo-Json -Compress
+        $payload = @{
+            activation_code = $ActivationCode
+            operating_system = (Resolve-HostOperatingSystem)
+        } | ConvertTo-Json -Compress
         try {
             $response = Invoke-RestMethod -Method Post -Uri $endpoint -ContentType "application/json" -Body $payload
         }
