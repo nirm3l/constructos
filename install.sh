@@ -11,9 +11,13 @@ ACTIVATION_CODE="${ACTIVATION_CODE:-}"
 LICENSE_SERVER_URL="${LICENSE_SERVER_URL:-https://licence.constructos.dev}"
 AUTO_DEPLOY="${AUTO_DEPLOY:-false}"
 INSTALL_COS="${INSTALL_COS:-true}"
+INSTALL_DESKTOP_APP="${INSTALL_DESKTOP_APP:-ask}"
 COS_INSTALL_METHOD="${COS_INSTALL_METHOD:-pipx}"
 COS_CLI_VERSION="${COS_CLI_VERSION:-0.1.2}"
 COS_CLI_WHEEL_URL="${COS_CLI_WHEEL_URL:-https://github.com/nirm3l/constructos/releases/download/cos-v${COS_CLI_VERSION}/constructos_cli-${COS_CLI_VERSION}-py3-none-any.whl}"
+DESKTOP_RELEASE_REPO="${DESKTOP_RELEASE_REPO:-nirm3l/m4tr1x}"
+DESKTOP_RELEASE_TAG="${DESKTOP_RELEASE_TAG:-latest}"
+DESKTOP_INSTALL_DIR="${DESKTOP_INSTALL_DIR:-${HOME}/Applications}"
 INSTALL_OLLAMA="${INSTALL_OLLAMA:-auto}"
 DEPLOY_OLLAMA_MODE="${DEPLOY_OLLAMA_MODE:-}"
 DEPLOY_WITH_OLLAMA="${DEPLOY_WITH_OLLAMA:-}"
@@ -98,6 +102,23 @@ normalize_ollama_mode() {
       ;;
     0 | false | no | off)
       echo "none"
+      ;;
+    *)
+      echo "invalid"
+      ;;
+  esac
+}
+
+normalize_desktop_install_mode() {
+  case "$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    ask | "")
+      echo "ask"
+      ;;
+    always | 1 | true | yes | on)
+      echo "always"
+      ;;
+    skip | 0 | false | no | off)
+      echo "skip"
       ;;
     *)
       echo "invalid"
@@ -305,6 +326,195 @@ detect_prompt_device() {
   fi
 
   return 1
+}
+
+prompt_yes_no() {
+  local prompt="$1"
+  local default_yes="${2:-true}"
+  local prompt_device=""
+  local response=""
+
+  if ! prompt_device="$(detect_prompt_device)"; then
+    return 1
+  fi
+
+  local suffix="[Y/n]"
+  if [[ "$default_yes" != "true" ]]; then
+    suffix="[y/N]"
+  fi
+
+  if [[ "$prompt_device" == "/dev/tty" ]]; then
+    printf "%s %s: " "$prompt" "$suffix" >/dev/tty
+    read -r response </dev/tty
+  else
+    read -r -p "$prompt $suffix: " response
+  fi
+
+  response="$(echo "${response:-}" | tr '[:upper:]' '[:lower:]')"
+  if [[ -z "$response" ]]; then
+    [[ "$default_yes" == "true" ]]
+    return
+  fi
+  case "$response" in
+    y | yes)
+      return 0
+      ;;
+    n | no)
+      return 1
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+desktop_release_api_url() {
+  local repo="${DESKTOP_RELEASE_REPO}"
+  local tag="${DESKTOP_RELEASE_TAG}"
+  if [[ -z "$repo" ]]; then
+    return 1
+  fi
+  if [[ "$tag" == "latest" || -z "$tag" ]]; then
+    printf '%s' "https://api.github.com/repos/${repo}/releases/latest"
+    return 0
+  fi
+  printf '%s' "https://api.github.com/repos/${repo}/releases/tags/${tag}"
+}
+
+desktop_release_asset_url() {
+  local host_os="$1"
+  local api_url=""
+  local payload=""
+  api_url="$(desktop_release_api_url || true)"
+  if [[ -z "$api_url" ]]; then
+    return 1
+  fi
+  payload="$(curl -fsSL "$api_url" 2>/dev/null || true)"
+  if [[ -z "$payload" ]]; then
+    return 1
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    return 1
+  fi
+  printf '%s' "$payload" | python3 - "$host_os" <<'PY'
+import json
+import sys
+
+host_os = (sys.argv[1] if len(sys.argv) > 1 else "").strip().lower()
+try:
+    payload = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+
+assets = payload.get("assets")
+if not isinstance(assets, list):
+    sys.exit(0)
+
+def ext_for_os(value: str) -> tuple[str, ...]:
+    if value == "linux":
+        return (".appimage",)
+    if value == "macos":
+        return (".dmg",)
+    if value == "windows":
+        return (".exe",)
+    return ()
+
+extensions = ext_for_os(host_os)
+if not extensions:
+    sys.exit(0)
+
+for asset in assets:
+    if not isinstance(asset, dict):
+        continue
+    url = str(asset.get("browser_download_url") or "").strip()
+    if not url:
+        continue
+    lowered = url.lower()
+    if any(lowered.endswith(ext) for ext in extensions):
+        print(url)
+        sys.exit(0)
+sys.exit(0)
+PY
+}
+
+install_desktop_app() {
+  local host_os="$1"
+  local asset_url=""
+  asset_url="$(desktop_release_asset_url "$host_os" || true)"
+  if [[ -z "$asset_url" ]]; then
+    log_warn "Desktop installer asset was not found for host OS (${host_os})."
+    log_warn "Set DESKTOP_RELEASE_REPO / DESKTOP_RELEASE_TAG if needed."
+    return 0
+  fi
+
+  case "$host_os" in
+    linux)
+      local target_dir="${DESKTOP_INSTALL_DIR}"
+      local target_path="${target_dir}/ConstructOS.AppImage"
+      mkdir -p "$target_dir"
+      if ! curl -fsSL --retry 3 "$asset_url" -o "$target_path"; then
+        log_warn "Failed to download desktop AppImage."
+        return 0
+      fi
+      chmod +x "$target_path" || true
+      log_info "Desktop app downloaded to: ${target_path}"
+      if prompt_yes_no "Launch ConstructOS desktop app now?" "false"; then
+        "$target_path" >/dev/null 2>&1 &
+      fi
+      ;;
+    macos)
+      local dmg_path
+      dmg_path="$(mktemp -t constructos-desktop.XXXXXX.dmg)"
+      if ! curl -fsSL --retry 3 "$asset_url" -o "$dmg_path"; then
+        log_warn "Failed to download desktop DMG."
+        return 0
+      fi
+      log_info "Desktop DMG downloaded to: ${dmg_path}"
+      if command -v open >/dev/null 2>&1; then
+        open "$dmg_path" || true
+        log_info "Opened DMG. Drag ConstructOS.app to Applications."
+      else
+        log_warn "Cannot open DMG automatically. Open it manually from: ${dmg_path}"
+      fi
+      ;;
+    windows)
+      log_warn "Bash installer on Windows does not auto-run desktop installer."
+      log_info "Download and run manually: ${asset_url}"
+      ;;
+    *)
+      log_warn "Unsupported host OS for desktop installer: ${host_os}"
+      ;;
+  esac
+  return 0
+}
+
+maybe_install_desktop_app() {
+  local host_os="$1"
+  local normalized_mode
+  normalized_mode="$(normalize_desktop_install_mode "${INSTALL_DESKTOP_APP:-ask}")"
+  if [[ "$normalized_mode" == "invalid" ]]; then
+    log_warn "Unsupported INSTALL_DESKTOP_APP=${INSTALL_DESKTOP_APP}. Allowed: ask, always, skip."
+    normalized_mode="ask"
+  fi
+
+  if [[ "$normalized_mode" == "skip" ]]; then
+    log_info "Skipping desktop app installation (INSTALL_DESKTOP_APP=skip)."
+    return 0
+  fi
+
+  if [[ "$normalized_mode" == "ask" ]]; then
+    if ! detect_prompt_device >/dev/null 2>&1; then
+      log_info "Non-interactive shell detected. Skipping desktop app prompt."
+      log_info "Set INSTALL_DESKTOP_APP=always to install desktop app automatically."
+      return 0
+    fi
+    if ! prompt_yes_no "Install ConstructOS desktop app?" "true"; then
+      log_info "Desktop app installation skipped by user."
+      return 0
+    fi
+  fi
+
+  install_desktop_app "$host_os"
 }
 
 prompt_for_ollama_preference() {
@@ -657,6 +867,7 @@ if is_truthy "$AUTO_DEPLOY"; then
     DEPLOY_OLLAMA_MODE="$DEPLOY_OLLAMA_MODE" \
     bash ./scripts/deploy.sh
   )
+  maybe_install_desktop_app "$HOST_OS"
   exit 0
 fi
 
@@ -683,7 +894,9 @@ else
   echo "5) run 'cos --help' (if COS CLI was installed)"
 fi
 
+maybe_install_desktop_app "$HOST_OS"
+
 echo ""
 echo "No-edit install (recommended):"
 echo "curl -fsSL https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${REPO_REF}/install.sh | \\"
-echo "  ACTIVATION_CODE='ACT-XXXX-XXXX-XXXX-XXXX-XXXX' IMAGE_TAG=${IMAGE_TAG} INSTALL_COS=true INSTALL_OLLAMA=auto AUTO_DEPLOY=1 bash"
+echo "  ACTIVATION_CODE='ACT-XXXX-XXXX-XXXX-XXXX-XXXX' IMAGE_TAG=${IMAGE_TAG} INSTALL_COS=true INSTALL_DESKTOP_APP=ask INSTALL_OLLAMA=auto AUTO_DEPLOY=1 bash"
