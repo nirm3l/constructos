@@ -112,6 +112,6 @@ IMAGE_TAG=main DEPLOY_OLLAMA_MODE=none bash ./scripts/deploy.sh
 Manual install:
 ```bash
 COS_CLI_VERSION=0.1.1
-pipx install --force "https://github.com/nirm3l/m4tr1x/releases/download/cos-v${COS_CLI_VERSION}/constructos_cli-${COS_CLI_VERSION}-py3-none-any.whl"
+pipx install --force "https://github.com/nirm3l/constructos/releases/download/cos-v${COS_CLI_VERSION}/constructos_cli-${COS_CLI_VERSION}-py3-none-any.whl"
 cos --help
 ```
