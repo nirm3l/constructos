@@ -550,15 +550,18 @@ install_desktop_app() {
       ;;
     macos)
       local dmg_path
-      dmg_path="$(mktemp -t constructos-desktop.XXXXXX.dmg)"
+      dmg_path="$(mktemp "${TMPDIR:-/tmp}/constructos-desktop.XXXXXX.dmg")"
       if ! curl_release_asset "$asset_url" "$dmg_path"; then
         log_warn "Failed to download desktop DMG."
         return 0
       fi
       log_info "Desktop DMG downloaded to: ${dmg_path}"
       if command -v open >/dev/null 2>&1; then
-        open "$dmg_path" || true
-        log_info "Opened DMG. Drag ConstructOS.app to Applications."
+        if open "$dmg_path"; then
+          log_info "Opened DMG. Drag ConstructOS.app to Applications."
+        else
+          log_warn "Could not open DMG automatically. Open it manually from: ${dmg_path}"
+        fi
       else
         log_warn "Cannot open DMG automatically. Open it manually from: ${dmg_path}"
       fi
