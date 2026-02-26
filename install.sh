@@ -19,16 +19,31 @@ CODEX_CONFIG_FILE="${CODEX_CONFIG_FILE:-}"
 CODEX_AUTH_FILE="${CODEX_AUTH_FILE:-}"
 EXCHANGED_IMAGE_TAG=""
 
+LOG_COLOR_RESET=""
+LOG_COLOR_INFO=""
+LOG_COLOR_WARN=""
+LOG_COLOR_ERROR=""
+
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  LOG_COLOR_RESET=$'\033[0m'
+  LOG_COLOR_INFO=$'\033[32m'
+fi
+
+if [[ -t 2 && -z "${NO_COLOR:-}" ]]; then
+  LOG_COLOR_WARN=$'\033[33m'
+  LOG_COLOR_ERROR=$'\033[31m'
+fi
+
 log_info() {
-  echo "[INFO] $*"
+  printf '%b[INFO]%b %s\n' "$LOG_COLOR_INFO" "$LOG_COLOR_RESET" "$*"
 }
 
 log_warn() {
-  echo "[WARN] $*" >&2
+  printf '%b[WARN]%b %s\n' "$LOG_COLOR_WARN" "$LOG_COLOR_RESET" "$*" >&2
 }
 
 log_error() {
-  echo "[ERROR] $*" >&2
+  printf '%b[ERROR]%b %s\n' "$LOG_COLOR_ERROR" "$LOG_COLOR_RESET" "$*" >&2
 }
 
 is_truthy() {
@@ -636,6 +651,13 @@ fi
 echo ""
 log_info "Constructos client files installed to: ${INSTALL_DIR}"
 log_info "Source: ${ARCHIVE_URL}"
+log_info "After deploy, open Constructos at: http://localhost:${APP_PORT:-8080}"
+echo ""
+echo "Optional integrations:"
+echo "- GitHub MCP: set GITHUB_PAT in .env, then set [mcp_servers.github].enabled = true in codex.config.toml and redeploy."
+echo "- Jira MCP: cp .env.jira-mcp.example .env.jira-mcp, add credentials, then run:"
+echo "  docker compose -p constructos-jira-mcp -f docker-compose.jira-mcp.yml up -d"
+echo ""
 echo "Next steps:"
 echo "1) cd ${INSTALL_DIR}"
 if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then

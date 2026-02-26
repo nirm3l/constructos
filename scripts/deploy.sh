@@ -32,6 +32,66 @@ log_error() {
   echo "[ERROR] $*" >&2
 }
 
+resolve_app_host() {
+  local app_host="${APP_HOST:-}"
+  if [[ -z "$app_host" ]]; then
+    app_host="$(resolve_compose_env_value "APP_HOST" || true)"
+  fi
+  if [[ -z "$app_host" ]]; then
+    app_host="localhost"
+  fi
+  printf '%s' "$app_host"
+}
+
+resolve_app_port() {
+  local app_port="${APP_PORT:-}"
+  if [[ -z "$app_port" ]]; then
+    app_port="$(resolve_compose_env_value "APP_PORT" || true)"
+  fi
+  if [[ -z "$app_port" ]]; then
+    app_port="8080"
+  fi
+  printf '%s' "$app_port"
+}
+
+build_app_url() {
+  local app_host="$1"
+  local app_port="$2"
+  printf 'http://%s:%s' "$app_host" "$app_port"
+}
+
+open_app_url() {
+  local app_url="$1"
+  local host_os="$2"
+
+  if [[ "${CI:-}" == "true" || "${CI:-}" == "1" ]]; then
+    return 1
+  fi
+
+  case "$host_os" in
+    macos)
+      if command -v open >/dev/null 2>&1; then
+        open "$app_url" >/dev/null 2>&1 && return 0
+      fi
+      ;;
+    linux)
+      if command -v xdg-open >/dev/null 2>&1; then
+        xdg-open "$app_url" >/dev/null 2>&1 && return 0
+      fi
+      ;;
+    windows)
+      if command -v cmd.exe >/dev/null 2>&1; then
+        cmd.exe /C start "" "$app_url" >/dev/null 2>&1 && return 0
+      fi
+      if command -v powershell.exe >/dev/null 2>&1; then
+        powershell.exe -NoProfile -Command "Start-Process '$app_url'" >/dev/null 2>&1 && return 0
+      fi
+      ;;
+  esac
+
+  return 1
+}
+
 normalize_truthy() {
   case "$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')" in
     1 | true | yes | on)
@@ -506,3 +566,21 @@ run_compose_step \
 
 log_info "Deployment completed. Active services:"
 docker compose "${COMPOSE_ARGS[@]}" --env-file .deploy.env ps
+
+APP_HOST_VALUE="$(resolve_app_host)"
+APP_PORT_VALUE="$(resolve_app_port)"
+APP_URL="$(build_app_url "$APP_HOST_VALUE" "$APP_PORT_VALUE")"
+
+echo ""
+log_info "Open Constructos at: ${APP_URL}"
+if open_app_url "$APP_URL" "$HOST_OS"; then
+  log_info "Opened Constructos in your default browser."
+else
+  log_info "If browser did not open automatically, open this URL manually."
+fi
+
+echo ""
+echo "Optional integrations:"
+echo "- GitHub MCP: set GITHUB_PAT in .env, then set [mcp_servers.github].enabled = true in codex.config.toml and redeploy."
+echo "- Jira MCP: cp .env.jira-mcp.example .env.jira-mcp, add credentials, then run:"
+echo "  docker compose -p constructos-jira-mcp -f docker-compose.jira-mcp.yml up -d"
