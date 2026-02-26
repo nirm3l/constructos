@@ -275,10 +275,6 @@ prompt_for_ollama_preference() {
   local host_os="$1"
   local normalized_install_ollama
 
-  if [[ "$host_os" == "macos" && "$DEPLOY_OLLAMA_MODE" == "auto" ]]; then
-    DEPLOY_OLLAMA_MODE="host"
-  fi
-
   if [[ "$DEPLOY_OLLAMA_MODE" != "auto" ]]; then
     return 0
   fi
@@ -308,6 +304,30 @@ prompt_for_ollama_preference() {
   fi
 
   while true; do
+    if [[ "$host_os" == "macos" ]]; then
+      echo "Choose how to continue:"
+      echo "1) Continue with Ollama support (host Ollama, recommended)"
+      echo "2) Continue without Ollama (AI embedding features will be limited)"
+      read -r -p "Select [1/2]: " ollama_choice
+      case "$ollama_choice" in
+        1 | "")
+          DEPLOY_OLLAMA_MODE="host"
+          INSTALL_OLLAMA="true"
+          return 0
+          ;;
+        2)
+          DEPLOY_OLLAMA_MODE="none"
+          INSTALL_OLLAMA="false"
+          log_warn "Continuing without Ollama support."
+          return 0
+          ;;
+        *)
+          echo "Please enter 1 or 2."
+          ;;
+      esac
+      continue
+    fi
+
     echo "Choose Ollama runtime:"
     echo "1) Auto (recommended) - try Docker GPU, then host Ollama, then Docker CPU"
     echo "2) Host Ollama only"
