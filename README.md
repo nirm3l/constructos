@@ -17,7 +17,7 @@ IMAGE_TAG=main bash ./scripts/deploy.sh
 ```
 
 ## Runtime profiles
-- `DEPLOY_TARGET=auto|base|ubuntu-gpu|macos-m4` (default: `auto`)
+- `DEPLOY_TARGET=auto|base|ubuntu-gpu|macos-m4|windows-desktop` (default: `auto`)
 - `IMAGE_TAG=<tag>` (default: `main`)
 - `ACTIVATION_CODE` (recommended)
 - `LICENSE_SERVER_TOKEN` (manual fallback)
@@ -26,14 +26,16 @@ IMAGE_TAG=main bash ./scripts/deploy.sh
 - `INSTALL_COS=true|false` (default: `true`)
 - `COS_INSTALL_METHOD=pipx|link` (default: `pipx`)
 - `INSTALL_OLLAMA=auto|true|false` (default: `auto`)
+- `DEPLOY_WITH_OLLAMA=auto|true|false` (default: `auto`, Linux-only service toggle)
 
 `INSTALL_OLLAMA` behavior:
-- `auto`: install Ollama only on macOS hosts.
-- `true`: try to install Ollama on any host (currently automated only for macOS).
+- `auto`: prompt when Ollama is missing, then continue with/without support.
+- `true`: try to install Ollama on host (automated on macOS and Windows when package manager is available).
 - `false`: skip Ollama installation.
 
 Deploy behavior by target:
 - `macos-m4`: app uses host Ollama at `http://host.docker.internal:11434`.
+- `windows-desktop`: app uses host Ollama at `http://host.docker.internal:11434`.
 - `base` and `ubuntu-gpu`: Ollama runs as a Docker service (`ollama`).
 
 ## Default GHCR images
@@ -67,6 +69,11 @@ curl -fsSL https://raw.githubusercontent.com/nirm3l/constructos/main/install.sh 
 Skip Ollama installation explicitly:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nirm3l/constructos/main/install.sh | ACTIVATION_CODE=ACT-XXXX-XXXX-XXXX-XXXX-XXXX INSTALL_OLLAMA=false bash
+```
+
+Skip Ollama service in Linux deploy:
+```bash
+IMAGE_TAG=main DEPLOY_WITH_OLLAMA=false bash ./scripts/deploy.sh
 ```
 
 Manual install:

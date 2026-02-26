@@ -13,9 +13,22 @@ AUTO_DEPLOY="${AUTO_DEPLOY:-false}"
 INSTALL_COS="${INSTALL_COS:-true}"
 COS_INSTALL_METHOD="${COS_INSTALL_METHOD:-pipx}"
 INSTALL_OLLAMA="${INSTALL_OLLAMA:-auto}"
+DEPLOY_WITH_OLLAMA="${DEPLOY_WITH_OLLAMA:-auto}"
 CODEX_CONFIG_FILE="${CODEX_CONFIG_FILE:-}"
 CODEX_AUTH_FILE="${CODEX_AUTH_FILE:-}"
 EXCHANGED_IMAGE_TAG=""
+
+log_info() {
+  echo "[INFO] $*"
+}
+
+log_warn() {
+  echo "[WARN] $*" >&2
+}
+
+log_error() {
+  echo "[ERROR] $*" >&2
+}
 
 is_truthy() {
   case "$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')" in
@@ -26,6 +39,100 @@ is_truthy() {
       return 1
       ;;
   esac
+}
+
+normalize_truthy() {
+  case "$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    1 | true | yes | on)
+      echo "true"
+      ;;
+    0 | false | no | off)
+      echo "false"
+      ;;
+    auto | "")
+      echo "auto"
+      ;;
+    *)
+      echo "invalid"
+      ;;
+  esac
+}
+
+resolve_host_os() {
+  local uname_value
+  uname_value="$(uname -s 2>/dev/null || echo "unknown")"
+  case "$uname_value" in
+    Linux*)
+      echo "linux"
+      ;;
+    Darwin*)
+      echo "macos"
+      ;;
+    CYGWIN* | MINGW* | MSYS*)
+      echo "windows"
+      ;;
+    *)
+      if [[ "${OS:-}" == "Windows_NT" ]]; then
+        echo "windows"
+      else
+        echo "unknown"
+      fi
+      ;;
+  esac
+}
+
+docker_install_hint() {
+  local host_os="$1"
+  case "$host_os" in
+    macos | windows)
+      echo "Install Docker Desktop and start it before deploy."
+      ;;
+    linux)
+      echo "Install Docker Engine + Docker Compose plugin and start the docker service."
+      ;;
+    *)
+      echo "Install Docker with Compose support and ensure the daemon is running."
+      ;;
+  esac
+}
+
+ensure_docker_available() {
+  local host_os="$1"
+  local required="$2"
+
+  if ! command -v docker >/dev/null 2>&1; then
+    if [[ "$required" == "true" ]]; then
+      log_error "Docker is required for deployment but was not found."
+      log_error "$(docker_install_hint "$host_os")"
+      exit 1
+    fi
+    log_warn "Docker is not installed. You must install Docker before running deploy."
+    log_warn "$(docker_install_hint "$host_os")"
+    return 1
+  fi
+
+  if ! docker compose version >/dev/null 2>&1; then
+    if [[ "$required" == "true" ]]; then
+      log_error "Docker Compose plugin is required but unavailable."
+      log_error "$(docker_install_hint "$host_os")"
+      exit 1
+    fi
+    log_warn "Docker Compose plugin is missing. Deploy will fail until it is installed."
+    return 1
+  fi
+
+  if ! docker info >/dev/null 2>&1; then
+    if [[ "$required" == "true" ]]; then
+      log_error "Docker is installed but the daemon is not reachable."
+      log_error "Start Docker and retry."
+      exit 1
+    fi
+    log_warn "Docker daemon is not reachable right now."
+    log_warn "Start Docker before running deploy."
+    return 1
+  fi
+
+  return 0
 }
 
 upsert_env_value() {
@@ -73,59 +180,131 @@ install_cos_cli() {
   local cos_install_script="${install_path}/tools/cos/scripts/install.sh"
 
   if ! is_truthy "${INSTALL_COS}"; then
-    echo "Skipping COS CLI installation (INSTALL_COS=${INSTALL_COS})."
+    log_info "Skipping COS CLI installation (INSTALL_COS=${INSTALL_COS})."
     return 0
   fi
 
   if [[ ! -f "${cos_install_script}" ]]; then
-    echo "COS CLI install script not found at ${cos_install_script}; skipping."
+    log_warn "COS CLI install script not found at ${cos_install_script}; skipping."
     return 0
   fi
 
   if [[ "${method}" != "pipx" && "${method}" != "link" ]]; then
-    echo "Unsupported COS_INSTALL_METHOD=${method}. Allowed: pipx, link. Falling back to pipx."
+    log_warn "Unsupported COS_INSTALL_METHOD=${method}. Allowed: pipx, link. Falling back to pipx."
     method="pipx"
   fi
 
   if [[ "${method}" == "pipx" ]] && ! command -v pipx >/dev/null 2>&1; then
-    echo "pipx not found; skipping automatic COS CLI installation."
-    echo "Install manually with: bash ${cos_install_script} --user --method pipx"
+    log_warn "pipx not found; skipping automatic COS CLI installation."
+    log_info "Install manually with: bash ${cos_install_script} --user --method pipx"
     return 0
   fi
 
-  echo "Installing COS CLI (method=${method})..."
+  log_info "Installing COS CLI (method=${method})..."
   if bash "${cos_install_script}" --user --method "${method}"; then
-    echo "COS CLI installation completed."
+    log_info "COS CLI installation completed."
     return 0
   fi
 
-  echo "COS CLI installation failed; continuing without blocking core deployment."
+  log_warn "COS CLI installation failed; continuing without blocking core deployment."
   return 0
 }
 
-resolve_host_os() {
-  uname -s
+explain_ollama_usage() {
+  local host_os="$1"
+  echo "Ollama powers local embeddings and AI retrieval/context features in Constructos."
+  case "$host_os" in
+    linux)
+      echo "On Linux, deploy can run an Ollama container automatically."
+      ;;
+    macos | windows)
+      echo "On ${host_os}, this profile expects host Ollama at http://host.docker.internal:11434."
+      ;;
+    *)
+      echo "If Ollama is unavailable, AI embedding features will be limited."
+      ;;
+  esac
+}
+
+prompt_for_ollama_preference() {
+  local host_os="$1"
+  local normalized_value
+
+  if command -v ollama >/dev/null 2>&1; then
+    return 0
+  fi
+
+  normalized_value="$(normalize_truthy "${INSTALL_OLLAMA:-auto}")"
+  if [[ "$normalized_value" == "invalid" ]]; then
+    log_warn "Unsupported INSTALL_OLLAMA=${INSTALL_OLLAMA}. Allowed: auto, true, false. Falling back to auto."
+    INSTALL_OLLAMA="auto"
+    normalized_value="auto"
+  fi
+
+  if [[ "$normalized_value" != "auto" ]]; then
+    return 0
+  fi
+
+  log_warn "Ollama is not currently installed on this host."
+  explain_ollama_usage "$host_os"
+
+  if [[ ! -t 0 ]]; then
+    log_warn "Non-interactive shell detected; cannot prompt for Ollama preference."
+    if [[ "$host_os" == "linux" ]]; then
+      log_warn "Keeping INSTALL_OLLAMA=auto and DEPLOY_WITH_OLLAMA=auto (Linux deploy includes Ollama container by default)."
+    else
+      log_warn "Keeping INSTALL_OLLAMA=auto. Install Ollama manually to enable AI embedding features."
+    fi
+    return 0
+  fi
+
+  while true; do
+    echo "Choose how to continue:"
+    echo "1) Continue with Ollama support (recommended)"
+    echo "2) Continue without Ollama (AI embedding features will be limited)"
+    read -r -p "Select [1/2]: " ollama_choice
+    case "$ollama_choice" in
+      1 | "")
+        if [[ "$host_os" == "linux" ]]; then
+          INSTALL_OLLAMA="auto"
+          DEPLOY_WITH_OLLAMA="auto"
+        else
+          INSTALL_OLLAMA="true"
+        fi
+        return 0
+        ;;
+      2)
+        INSTALL_OLLAMA="false"
+        DEPLOY_WITH_OLLAMA="false"
+        log_warn "Continuing without Ollama support."
+        return 0
+        ;;
+      *)
+        echo "Please enter 1 or 2."
+        ;;
+    esac
+  done
 }
 
 should_install_ollama() {
   local normalized_value
-  normalized_value="$(echo "${INSTALL_OLLAMA:-auto}" | tr '[:upper:]' '[:lower:]')"
+  normalized_value="$(normalize_truthy "${INSTALL_OLLAMA:-auto}")"
   case "$normalized_value" in
-    1 | true | yes | on)
+    true)
       return 0
       ;;
-    0 | false | no | off)
+    false)
       return 1
       ;;
     auto)
-      if [[ "$(resolve_host_os)" == "Darwin" ]]; then
+      if [[ "$(resolve_host_os)" == "macos" ]]; then
         return 0
       fi
       return 1
       ;;
-    *)
-      echo "Unsupported INSTALL_OLLAMA=${INSTALL_OLLAMA}. Allowed: auto, true, false. Falling back to auto."
-      if [[ "$(resolve_host_os)" == "Darwin" ]]; then
+    invalid)
+      log_warn "Unsupported INSTALL_OLLAMA=${INSTALL_OLLAMA}. Allowed: auto, true, false. Falling back to auto."
+      if [[ "$(resolve_host_os)" == "macos" ]]; then
         return 0
       fi
       return 1
@@ -133,44 +312,77 @@ should_install_ollama() {
   esac
 }
 
+resolve_winget_command() {
+  if command -v winget >/dev/null 2>&1; then
+    printf '%s' "winget"
+    return 0
+  fi
+  if command -v winget.exe >/dev/null 2>&1; then
+    printf '%s' "winget.exe"
+    return 0
+  fi
+  return 1
+}
+
 install_ollama() {
   local host_os
   host_os="$(resolve_host_os)"
 
   if ! should_install_ollama; then
-    echo "Skipping Ollama installation (INSTALL_OLLAMA=${INSTALL_OLLAMA})."
+    log_info "Skipping Ollama installation (INSTALL_OLLAMA=${INSTALL_OLLAMA})."
     return 0
   fi
 
   if command -v ollama >/dev/null 2>&1; then
-    echo "Ollama is already installed."
+    log_info "Ollama is already installed."
     return 0
   fi
 
-  if [[ "$host_os" != "Darwin" ]]; then
-    echo "Automatic Ollama installation is currently supported only on macOS."
-    echo "Install manually from https://ollama.com/download"
-    return 0
-  fi
+  case "$host_os" in
+    macos)
+      if ! command -v brew >/dev/null 2>&1; then
+        log_warn "Homebrew not found; cannot auto-install Ollama on macOS."
+        log_info "Install manually from https://ollama.com/download"
+        return 0
+      fi
 
-  if ! command -v brew >/dev/null 2>&1; then
-    echo "Homebrew not found; cannot auto-install Ollama on macOS."
-    echo "Install manually from https://ollama.com/download"
-    return 0
-  fi
+      log_info "Installing Ollama on macOS via Homebrew cask..."
+      if ! brew install --cask ollama; then
+        log_warn "Ollama installation failed; continuing without blocking core deployment."
+        log_info "Install manually from https://ollama.com/download"
+        return 0
+      fi
 
-  echo "Installing Ollama on macOS via Homebrew cask..."
-  if ! brew install --cask ollama; then
-    echo "Ollama installation failed; continuing without blocking core deployment."
-    echo "Install manually from https://ollama.com/download"
-    return 0
-  fi
+      if command -v open >/dev/null 2>&1; then
+        open -ga Ollama >/dev/null 2>&1 || true
+      fi
 
-  if command -v open >/dev/null 2>&1; then
-    open -ga Ollama >/dev/null 2>&1 || true
-  fi
+      log_info "Ollama installation completed."
+      ;;
+    windows)
+      local winget_cmd
+      winget_cmd="$(resolve_winget_command || true)"
+      if [[ -z "$winget_cmd" ]]; then
+        log_warn "winget was not found; cannot auto-install Ollama on Windows."
+        log_info "Install manually from https://ollama.com/download"
+        return 0
+      fi
 
-  echo "Ollama installation completed."
+      log_info "Installing Ollama on Windows via winget..."
+      if ! "$winget_cmd" install --id Ollama.Ollama -e --accept-package-agreements --accept-source-agreements; then
+        log_warn "Ollama installation failed; continuing without blocking core deployment."
+        log_info "Install manually from https://ollama.com/download"
+        return 0
+      fi
+
+      log_info "Ollama installation completed."
+      ;;
+    *)
+      log_warn "Automatic Ollama installation is currently supported on macOS and Windows only."
+      log_info "Install manually from https://ollama.com/download"
+      ;;
+  esac
+
   return 0
 }
 
@@ -212,7 +424,7 @@ exchange_license_token() {
   request_payload="$(printf '{"activation_code":"%s"}' "$(printf '%s' "$activation_code" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')")"
 
   if ! response="$(curl -sS -X POST "$endpoint" -H "Content-Type: application/json" --data "$request_payload" -w $'\n%{http_code}')"; then
-    echo "Failed to reach license server endpoint: ${endpoint}" >&2
+    log_error "Failed to reach license server endpoint: ${endpoint}"
     return 1
   fi
 
@@ -227,16 +439,16 @@ exchange_license_token() {
     if [[ -z "$detail" ]]; then
       detail="$(printf '%s' "$body" | json_extract_field "message")"
     fi
-    echo "Activation code exchange failed (${status:-unknown HTTP status})." >&2
+    log_error "Activation code exchange failed (${status:-unknown HTTP status})."
     if [[ -n "$detail" ]]; then
-      echo "Server detail: ${detail}" >&2
+      log_error "Server detail: ${detail}"
     fi
     return 1
   fi
 
   exchanged_token="$(printf '%s' "$body" | json_extract_field "license_server_token")"
   if [[ -z "$exchanged_token" ]]; then
-    echo "Activation code exchange response did not include license_server_token." >&2
+    log_error "Activation code exchange response did not include license_server_token."
     return 1
   fi
 
@@ -244,10 +456,15 @@ exchange_license_token() {
   LICENSE_SERVER_TOKEN="$exchanged_token"
 }
 
+HOST_OS="$(resolve_host_os)"
+ensure_docker_available "$HOST_OS" "false" || true
+prompt_for_ollama_preference "$HOST_OS"
+
 ARCHIVE_URL="https://codeload.github.com/${REPO_OWNER}/${REPO_NAME}/tar.gz/${REPO_REF}"
 TMP_ARCHIVE="$(mktemp -t constructos-client.XXXXXX.tar.gz)"
 trap 'rm -f "$TMP_ARCHIVE"' EXIT
 
+log_info "Downloading ${REPO_OWNER}/${REPO_NAME}@${REPO_REF}..."
 curl -fsSL --retry 3 "$ARCHIVE_URL" -o "$TMP_ARCHIVE"
 mkdir -p "$INSTALL_DIR"
 # GitHub source archives are rooted at <repo>-<ref>/
@@ -255,7 +472,7 @@ tar -xzf "$TMP_ARCHIVE" -C "$INSTALL_DIR" --strip-components=1
 
 if [[ -z "$LICENSE_SERVER_TOKEN" && -n "$ACTIVATION_CODE" ]]; then
   exchange_license_token "$ACTIVATION_CODE"
-  echo "Exchanged activation code for LICENSE_SERVER_TOKEN via ${LICENSE_SERVER_URL%/}/v1/install/exchange."
+  log_info "Exchanged activation code for LICENSE_SERVER_TOKEN via ${LICENSE_SERVER_URL%/}/v1/install/exchange."
 fi
 
 if [[ -z "$IMAGE_TAG" ]]; then
@@ -274,7 +491,11 @@ if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then
   upsert_env_value "$ENV_FILE_PATH" "LICENSE_SERVER_TOKEN" "$LICENSE_SERVER_TOKEN"
   upsert_env_value "$ENV_FILE_PATH" "CODEX_CONFIG_FILE" "$CODEX_CONFIG_FILE"
   upsert_env_value "$ENV_FILE_PATH" "CODEX_AUTH_FILE" "$CODEX_AUTH_FILE"
-  echo "Prepared ${ENV_FILE_PATH} with IMAGE_TAG, LICENSE_SERVER_TOKEN, CODEX_CONFIG_FILE, and CODEX_AUTH_FILE."
+  upsert_env_value "$ENV_FILE_PATH" "DEPLOY_WITH_OLLAMA" "$DEPLOY_WITH_OLLAMA"
+  if [[ "$HOST_OS" == "windows" ]]; then
+    upsert_env_value "$ENV_FILE_PATH" "DEPLOY_TARGET" "windows-desktop"
+  fi
+  log_info "Prepared ${ENV_FILE_PATH} with deploy settings."
 fi
 
 install_ollama
@@ -282,19 +503,26 @@ install_cos_cli "$INSTALL_DIR"
 
 if is_truthy "$AUTO_DEPLOY"; then
   if [[ -z "$LICENSE_SERVER_TOKEN" ]]; then
-    echo "AUTO_DEPLOY requires LICENSE_SERVER_TOKEN or ACTIVATION_CODE."
+    log_error "AUTO_DEPLOY requires LICENSE_SERVER_TOKEN or ACTIVATION_CODE."
     exit 1
   fi
-  echo "Running deploy in ${INSTALL_DIR}..."
+  ensure_docker_available "$HOST_OS" "true"
+  log_info "Running deploy in ${INSTALL_DIR}..."
   (
     cd "$INSTALL_DIR"
-    IMAGE_TAG="$IMAGE_TAG" LICENSE_SERVER_TOKEN="$LICENSE_SERVER_TOKEN" CODEX_CONFIG_FILE="$CODEX_CONFIG_FILE" CODEX_AUTH_FILE="$CODEX_AUTH_FILE" bash ./scripts/deploy.sh
+    IMAGE_TAG="$IMAGE_TAG" \
+    LICENSE_SERVER_TOKEN="$LICENSE_SERVER_TOKEN" \
+    CODEX_CONFIG_FILE="$CODEX_CONFIG_FILE" \
+    CODEX_AUTH_FILE="$CODEX_AUTH_FILE" \
+    DEPLOY_WITH_OLLAMA="$DEPLOY_WITH_OLLAMA" \
+    bash ./scripts/deploy.sh
   )
   exit 0
 fi
 
-echo "Constructos client files installed to: ${INSTALL_DIR}"
-echo "Source: ${ARCHIVE_URL}"
+echo ""
+log_info "Constructos client files installed to: ${INSTALL_DIR}"
+log_info "Source: ${ARCHIVE_URL}"
 echo "Next steps:"
 echo "1) cd ${INSTALL_DIR}"
 if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then
@@ -307,6 +535,7 @@ else
   echo "4) IMAGE_TAG=${IMAGE_TAG} bash ./scripts/deploy.sh"
   echo "5) run 'cos --help' (if COS CLI was installed)"
 fi
+
 echo ""
 echo "No-edit install (recommended):"
 echo "curl -fsSL https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${REPO_REF}/install.sh | \\"
