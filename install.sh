@@ -271,9 +271,25 @@ explain_ollama_usage() {
   esac
 }
 
+detect_prompt_device() {
+  if [[ -t 0 ]]; then
+    echo "stdin"
+    return 0
+  fi
+
+  if [[ -r /dev/tty && -w /dev/tty ]]; then
+    echo "/dev/tty"
+    return 0
+  fi
+
+  return 1
+}
+
 prompt_for_ollama_preference() {
   local host_os="$1"
   local normalized_install_ollama
+  local prompt_device=""
+  local ollama_choice=""
 
   if [[ "$DEPLOY_OLLAMA_MODE" != "auto" ]]; then
     return 0
@@ -297,7 +313,7 @@ prompt_for_ollama_preference() {
   log_warn "Ollama is not currently installed on this host."
   explain_ollama_usage "$host_os"
 
-  if [[ ! -t 0 ]]; then
+  if ! prompt_device="$(detect_prompt_device)"; then
     log_warn "Non-interactive shell detected; cannot prompt for Ollama preference."
     log_warn "Keeping DEPLOY_OLLAMA_MODE=auto."
     return 0
@@ -308,7 +324,12 @@ prompt_for_ollama_preference() {
       echo "Choose how to continue:"
       echo "1) Continue with Ollama support (host Ollama, recommended)"
       echo "2) Continue without Ollama (AI embedding features will be limited)"
-      read -r -p "Select [1/2]: " ollama_choice
+      if [[ "$prompt_device" == "/dev/tty" ]]; then
+        printf "Select [1/2]: " >/dev/tty
+        read -r ollama_choice </dev/tty
+      else
+        read -r -p "Select [1/2]: " ollama_choice
+      fi
       case "$ollama_choice" in
         1 | "")
           DEPLOY_OLLAMA_MODE="host"
@@ -332,7 +353,12 @@ prompt_for_ollama_preference() {
     echo "1) Auto (recommended) - try Docker GPU, then host Ollama, then Docker CPU"
     echo "2) Host Ollama only"
     echo "3) Continue without Ollama"
-    read -r -p "Select [1/2/3]: " ollama_choice
+    if [[ "$prompt_device" == "/dev/tty" ]]; then
+      printf "Select [1/2/3]: " >/dev/tty
+      read -r ollama_choice </dev/tty
+    else
+      read -r -p "Select [1/2/3]: " ollama_choice
+    fi
     case "$ollama_choice" in
       1 | "")
         DEPLOY_OLLAMA_MODE="auto"
