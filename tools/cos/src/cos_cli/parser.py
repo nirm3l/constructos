@@ -62,6 +62,11 @@ _GREEN_THEME_RESET = (
     b"\x1b]104;15\007"
 )
 
+_SCOPE_ENV_KEYS = (
+    "MCP_DEFAULT_WORKSPACE_ID",
+    "COS_WORKSPACE_ID",
+)
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -190,6 +195,60 @@ def _run_with_green_pty(cmd: list[str], env: dict[str, str]) -> int:
             pass
 
 
+def _read_scope_from_local_env() -> dict[str, str]:
+    return {key: str(os.getenv(key, "")).strip() for key in _SCOPE_ENV_KEYS}
+
+
+def _read_scope_from_docker_env(*, container: str) -> dict[str, str]:
+    target = str(container or "").strip()
+    if not target:
+        return {}
+    code = (
+        "import json,os\n"
+        "keys = [\n"
+        "  'MCP_DEFAULT_WORKSPACE_ID',\n"
+        "  'COS_WORKSPACE_ID',\n"
+        "]\n"
+        "print(json.dumps({k: (os.getenv(k, '') or '') for k in keys}, ensure_ascii=True))\n"
+    )
+    try:
+        proc = subprocess.run(
+            ["docker", "exec", target, "python", "-c", code],
+            text=True,
+            capture_output=True,
+            timeout=8,
+            check=False,
+        )
+    except Exception:
+        return {}
+    if proc.returncode != 0:
+        return {}
+    try:
+        payload = json.loads(str(proc.stdout or "").strip() or "{}")
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    out: dict[str, str] = {}
+    for key in _SCOPE_ENV_KEYS:
+        out[key] = str(payload.get(key, "") or "").strip()
+    return out
+
+
+def _resolve_runtime_scope(*, codex_backend: str, docker_container: str) -> dict[str, object]:
+    backend = str(codex_backend or "").strip().lower()
+    if backend == "docker":
+        raw = _read_scope_from_docker_env(container=docker_container)
+    else:
+        raw = _read_scope_from_local_env()
+
+    workspace_id = str(raw.get("COS_WORKSPACE_ID", "")).strip() or str(raw.get("MCP_DEFAULT_WORKSPACE_ID", "")).strip()
+
+    return {
+        "workspace_id": workspace_id,
+    }
+
+
 def _run_codex(
     *,
     command: str,
@@ -225,6 +284,11 @@ def _run_codex(
         typer.echo(str(exc), err=True)
         return 1
 
+    runtime_scope = _resolve_runtime_scope(
+        codex_backend=str(codex_backend or ""),
+        docker_container=str(docker_container or ""),
+    )
+
     user_prompt = resolve_user_prompt(str(prompt or ""), allow_stdin=True)
     if command == "exec" and not user_prompt:
         typer.echo("`cos exec` requires a prompt (argument or stdin via '-').", err=True)
@@ -238,6 +302,7 @@ def _run_codex(
             app_mcp_url=app_mcp_url,
             extra_system_prompt=extra_system_prompt,
             has_user_prompt=has_user_prompt,
+            runtime_workspace_id=str(runtime_scope.get("workspace_id", "") or ""),
         )
         wrapped_prompt = compose_prompt(hidden_instruction=hidden_instruction, user_prompt=user_prompt)
 

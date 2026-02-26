@@ -26,6 +26,7 @@ def build_hidden_instruction(
     app_mcp_url: str,
     extra_system_prompt: str,
     has_user_prompt: bool,
+    runtime_workspace_id: str = "",
 ) -> str:
     base = (
         "COS wrapper runtime instructions:\n"
@@ -33,10 +34,15 @@ def build_hidden_instruction(
         f"- Server name: {app_mcp_name}\n"
         f"- Server URL: {app_mcp_url}\n"
         "- Use this MCP when the request touches workspace/project/task/specification/note/rule data.\n"
+        "- The workspace context below is auto-detected from the active application runtime.\n"
+        "- Unless the user explicitly asks for a different workspace, use the detected workspace_id directly in MCP calls.\n"
         "- For coding requests, implement directly in the current repository: edit files, run commands, run tests, and report concrete results.\n"
         "- Do not ask the user to manually configure or enable this MCP server.\n"
     )
     blocks: list[str] = [base]
+    if runtime_workspace_id:
+        blocks.append(f"Detected application workspace:\n- Active workspace_id: {runtime_workspace_id}")
+
     if extra_system_prompt:
         blocks.append(f"Additional COS system instructions:\n{extra_system_prompt}")
     if not has_user_prompt:

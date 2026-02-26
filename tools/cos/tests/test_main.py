@@ -18,7 +18,7 @@ from cos_cli.config import resolve_effective_config  # noqa: E402
 from cos_cli.doctor import _collect_docker_git_auth_checks, docker_tcp_probe, resolve_mcp_endpoint, summarize_check_counts  # noqa: E402
 from cos_cli.main import main  # noqa: E402
 from cos_cli.parser import _apply_green_theme_to_chunk, app  # noqa: E402
-from cos_cli.prompting import compose_prompt  # noqa: E402
+from cos_cli.prompting import build_hidden_instruction, compose_prompt  # noqa: E402
 
 
 def _args_stub(**overrides):
@@ -64,6 +64,17 @@ def test_compose_prompt_includes_user_request_section():
     assert "system" in prompt
     assert "User request:" in prompt
     assert "implement feature" in prompt
+
+
+def test_build_hidden_instruction_includes_detected_scope():
+    instruction = build_hidden_instruction(
+        app_mcp_name="task-management-tools",
+        app_mcp_url="http://localhost:8091/mcp",
+        extra_system_prompt="",
+        has_user_prompt=True,
+        runtime_workspace_id="10000000-0000-0000-0000-000000000001",
+    )
+    assert "Active workspace_id: 10000000-0000-0000-0000-000000000001" in instruction
 
 
 def test_build_codex_command_injects_app_mcp_and_prompt():
