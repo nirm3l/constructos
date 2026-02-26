@@ -595,8 +595,6 @@ bootstrap_codex_auth_via_container() {
 
   bootstrap_volume="constructos-codex-auth-bootstrap-$(date +%s)-$RANDOM"
 
-  run_compose_step "Prepare Codex bootstrap image" docker pull "$bootstrap_image"
-
   if ! docker volume create "$bootstrap_volume" >/dev/null; then
     log_error "Failed to create temporary Docker volume for Codex auth bootstrap."
     return 1
@@ -709,53 +707,30 @@ if [[ ! -f "$CODEX_CONFIG_FILE" ]]; then
   log_error "Set CODEX_CONFIG_FILE to a valid file path before deploy."
   exit 1
 fi
-if [[ ! -f "$CODEX_AUTH_FILE" ]]; then
-  log_warn "Codex authentication file was not found on host: $CODEX_AUTH_FILE"
-  log_info "Falling back to in-container device authentication (codex login --device-auth)."
-  if ! can_prompt_user; then
-    log_error "Interactive terminal is required to bootstrap Codex auth in container."
-    log_error "Run codex login on host, set CODEX_AUTH_FILE, or re-run deploy interactively."
-    exit 1
-  fi
-
-  if prompt_yes_no "Run 'codex login --device-auth' in a temporary container now? [Y/n] " "y"; then
-    if ! bootstrap_codex_auth_via_container "$CODEX_BOOTSTRAP_IMAGE" "$CODEX_CONFIG_FILE" "$CODEX_AUTH_FILE"; then
-      log_error "Could not bootstrap Codex auth via container."
-      exit 1
-    fi
-  else
-    log_error "Deployment requires Codex auth."
-    log_error "Run codex login on host or set CODEX_AUTH_FILE before deploy."
-    exit 1
-  fi
-fi
 
 if ! chmod a+r "$CODEX_CONFIG_FILE" 2>/dev/null; then
   log_warn "Unable to adjust read permissions for $CODEX_CONFIG_FILE"
-fi
-if ! chmod a+r "$CODEX_AUTH_FILE" 2>/dev/null; then
-  log_warn "Unable to adjust read permissions for $CODEX_AUTH_FILE"
 fi
 
 TARGET_RESOLVED="$(resolve_deploy_target "$HOST_OS")"
 resolve_requested_ollama_mode
 resolve_runtime_ollama_mode "$REQUESTED_OLLAMA_MODE" "$TARGET_RESOLVED" "$HOST_OS"
 
-COMPOSE_FILES=(docker-compose.yml)
+COMPOSE_FILES=(compose/base/app.yml)
 case "$TARGET_RESOLVED" in
   base)
     ;;
   ubuntu-gpu)
     # Add this profile only when running Docker GPU with DRI passthrough.
     if [[ "$RESOLVED_OLLAMA_MODE" == "docker-gpu" && "$OLLAMA_GPU_BACKEND" == "dri" ]]; then
-      COMPOSE_FILES+=(docker-compose.ubuntu-gpu.yml)
+      COMPOSE_FILES+=(compose/platforms/ubuntu-gpu.yml)
     fi
     ;;
   macos-m4)
-    COMPOSE_FILES+=(docker-compose.macos-m4.yml)
+    COMPOSE_FILES+=(compose/platforms/macos-m4.yml)
     ;;
   windows-desktop)
-    COMPOSE_FILES+=(docker-compose.windows.yml)
+    COMPOSE_FILES+=(compose/platforms/windows.yml)
     ;;
   *)
     log_error "Unsupported DEPLOY_TARGET: $TARGET_RESOLVED"
@@ -766,21 +741,21 @@ esac
 
 case "$RESOLVED_OLLAMA_MODE" in
   host)
-    COMPOSE_FILES+=(docker-compose.ollama-host.yml)
+    COMPOSE_FILES+=(compose/ollama/host.yml)
     if [[ "$HOST_OS" == "linux" && "$TARGET_RESOLVED" != "macos-m4" ]]; then
-      COMPOSE_FILES+=(docker-compose.ollama-host-linux.yml)
+      COMPOSE_FILES+=(compose/ollama/host-linux.yml)
     fi
     ;;
   none)
-    COMPOSE_FILES+=(docker-compose.ollama-disabled.yml)
+    COMPOSE_FILES+=(compose/ollama/disabled.yml)
     ;;
   docker)
     ;;
   docker-gpu)
     if [[ "$OLLAMA_GPU_BACKEND" == "nvidia" ]]; then
-      COMPOSE_FILES+=(docker-compose.ollama-gpu-nvidia.yml)
+      COMPOSE_FILES+=(compose/ollama/gpu-nvidia.yml)
     elif [[ "$OLLAMA_GPU_BACKEND" == "dri" && "$TARGET_RESOLVED" != "ubuntu-gpu" ]]; then
-      COMPOSE_FILES+=(docker-compose.ollama-gpu-dri.yml)
+      COMPOSE_FILES+=(compose/ollama/gpu-dri.yml)
     fi
     ;;
 esac
@@ -833,6 +808,31 @@ run_compose_step \
   "Pull images" \
   docker compose "${COMPOSE_ARGS[@]}" --env-file .deploy.env pull --quiet "${DEPLOY_SERVICES[@]}"
 
+if [[ ! -f "$CODEX_AUTH_FILE" ]]; then
+  log_warn "Codex authentication file was not found on host: $CODEX_AUTH_FILE"
+  log_info "Falling back to in-container device authentication (codex login --device-auth)."
+  if ! can_prompt_user; then
+    log_error "Interactive terminal is required to bootstrap Codex auth in container."
+    log_error "Run codex login on host, set CODEX_AUTH_FILE, or re-run deploy interactively."
+    exit 1
+  fi
+
+  if prompt_yes_no "Run 'codex login --device-auth' in a temporary container now? [Y/n] " "y"; then
+    if ! bootstrap_codex_auth_via_container "$CODEX_BOOTSTRAP_IMAGE" "$CODEX_CONFIG_FILE" "$CODEX_AUTH_FILE"; then
+      log_error "Could not bootstrap Codex auth via container."
+      exit 1
+    fi
+  else
+    log_error "Deployment requires Codex auth."
+    log_error "Run codex login on host or set CODEX_AUTH_FILE before deploy."
+    exit 1
+  fi
+fi
+
+if ! chmod a+r "$CODEX_AUTH_FILE" 2>/dev/null; then
+  log_warn "Unable to adjust read permissions for $CODEX_AUTH_FILE"
+fi
+
 run_compose_step \
   "Start services" \
   docker compose "${COMPOSE_ARGS[@]}" --env-file .deploy.env up -d --no-build --quiet-pull "${DEPLOY_SERVICES[@]}"
@@ -867,4 +867,4 @@ echo ""
 echo "Optional integrations:"
 echo "- GitHub MCP: set GITHUB_PAT in .env, then set [mcp_servers.github].enabled = true in codex.config.toml and redeploy."
 echo "- Jira MCP: cp .env.jira-mcp.example .env.jira-mcp, add credentials, then run:"
-echo "  docker compose -p constructos-jira-mcp -f docker-compose.jira-mcp.yml up -d"
+echo "  docker compose -p constructos-jira-mcp -f compose/integrations/jira-mcp.yml up -d"

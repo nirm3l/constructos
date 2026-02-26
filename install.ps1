@@ -615,10 +615,10 @@ function Invoke-ConstructosDeploy {
 
     $resolvedOllamaMode = Resolve-RuntimeOllamaMode -RequestedMode $RequestedOllamaMode
 
-    $composeFiles = @("docker-compose.yml", "docker-compose.windows.yml")
+    $composeFiles = @("compose/base/app.yml", "compose/platforms/windows.yml")
     switch ($resolvedOllamaMode) {
-        "host" { $composeFiles += "docker-compose.ollama-host.yml" }
-        "none" { $composeFiles += "docker-compose.ollama-disabled.yml" }
+        "host" { $composeFiles += "compose/ollama/host.yml" }
+        "none" { $composeFiles += "compose/ollama/disabled.yml" }
     }
 
     $services = New-Object System.Collections.Generic.List[string]
@@ -725,7 +725,7 @@ CODEX_AUTH_FILE=$CodexAuthFile
     Write-Host "Optional integrations:"
     Write-Host "- GitHub MCP: set GITHUB_PAT in .env, then set [mcp_servers.github].enabled = true in codex.config.toml and redeploy."
     Write-Host "- Jira MCP: copy .env.jira-mcp.example to .env.jira-mcp, add credentials, then run:"
-    Write-Host "  docker compose -p constructos-jira-mcp -f docker-compose.jira-mcp.yml up -d"
+    Write-Host "  docker compose -p constructos-jira-mcp -f compose/integrations/jira-mcp.yml up -d"
 }
 
 $RepoOwner = Get-SettingValue -Current $RepoOwner -EnvName "REPO_OWNER" -DefaultValue "nirm3l"
@@ -859,7 +859,7 @@ try {
     Write-Host "Optional integrations:"
     Write-Host "- GitHub MCP: set GITHUB_PAT in .env, then set [mcp_servers.github].enabled = true in codex.config.toml and redeploy."
     Write-Host "- Jira MCP: copy .env.jira-mcp.example to .env.jira-mcp, add credentials, then run:"
-    Write-Host "  docker compose -p constructos-jira-mcp -f docker-compose.jira-mcp.yml up -d"
+    Write-Host "  docker compose -p constructos-jira-mcp -f compose/integrations/jira-mcp.yml up -d"
     Write-Host ""
     Write-Host "Next steps:"
     Write-Host "1) Set-Location `"$installPath`""

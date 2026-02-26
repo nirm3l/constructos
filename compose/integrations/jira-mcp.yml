@@ -3,7 +3,7 @@ services:
     image: ghcr.io/sooperset/mcp-atlassian:latest
     container_name: jira-mcp
     env_file:
-      - .env.jira-mcp
+      - ../../.env.jira-mcp
     command:
       - --transport
       - streamable-http
