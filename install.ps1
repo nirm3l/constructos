@@ -474,7 +474,19 @@ function Install-CosCliIfNeeded {
         return
     }
 
-    & pipx ensurepath *> $null
+    $ensurePathOk = $true
+    try {
+        & pipx ensurepath *> $null
+        if ($LASTEXITCODE -ne 0) {
+            $ensurePathOk = $false
+        }
+    }
+    catch {
+        $ensurePathOk = $false
+    }
+    if (-not $ensurePathOk) {
+        Write-WarnMessage "pipx ensurepath reported a warning. Open a new terminal if 'cos' is not recognized."
+    }
     Write-Info "COS CLI installation completed."
 }
 
