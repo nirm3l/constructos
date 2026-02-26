@@ -1,22 +1,29 @@
 from __future__ import annotations
 
 import errno
-import fcntl
 import json
 import os
 from pathlib import Path
-import pty
 import re
 import select
 import signal
 import subprocess
 import sys
-import termios
 from types import SimpleNamespace
-import tty
 from typing import Annotated, Literal
 
 import typer
+
+try:
+    import fcntl
+    import pty
+    import termios
+    import tty
+except Exception:
+    fcntl = None  # type: ignore[assignment]
+    pty = None  # type: ignore[assignment]
+    termios = None  # type: ignore[assignment]
+    tty = None  # type: ignore[assignment]
 
 from cos_cli import __version__
 from cos_cli.codex_runner import build_codex_command, find_docker_resume_home, require_codex_runtime
@@ -66,6 +73,7 @@ _SCOPE_ENV_KEYS = (
     "MCP_DEFAULT_WORKSPACE_ID",
     "COS_WORKSPACE_ID",
 )
+_HAS_POSIX_TTY = all(module is not None for module in (fcntl, pty, termios, tty))
 
 
 def _version_callback(value: bool) -> None:
@@ -117,6 +125,8 @@ def _stdout_write(data: bytes) -> None:
 
 
 def _copy_winsize(source_fd: int, target_fd: int) -> None:
+    if not _HAS_POSIX_TTY:
+        return
     try:
         window_size = fcntl.ioctl(source_fd, termios.TIOCGWINSZ, b"\x00" * 8)
         fcntl.ioctl(target_fd, termios.TIOCSWINSZ, window_size)
@@ -138,6 +148,10 @@ def _apply_green_theme_to_chunk(data: bytes) -> bytes:
 
 
 def _run_with_green_pty(cmd: list[str], env: dict[str, str]) -> int:
+    if not _HAS_POSIX_TTY:
+        completed = subprocess.run(cmd, check=False, env=env)
+        return int(completed.returncode)
+
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         completed = subprocess.run(cmd, check=False, env=env)
         return int(completed.returncode)
