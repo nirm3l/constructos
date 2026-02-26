@@ -15,8 +15,8 @@ INSTALL_DESKTOP_APP="${INSTALL_DESKTOP_APP:-ask}"
 COS_INSTALL_METHOD="${COS_INSTALL_METHOD:-pipx}"
 COS_CLI_VERSION="${COS_CLI_VERSION:-0.1.2}"
 COS_CLI_WHEEL_URL="${COS_CLI_WHEEL_URL:-https://github.com/nirm3l/constructos/releases/download/cos-v${COS_CLI_VERSION}/constructos_cli-${COS_CLI_VERSION}-py3-none-any.whl}"
-DESKTOP_RELEASE_REPO="${DESKTOP_RELEASE_REPO:-nirm3l/m4tr1x}"
-DESKTOP_RELEASE_TAG="${DESKTOP_RELEASE_TAG:-latest}"
+DESKTOP_RELEASE_REPO="${DESKTOP_RELEASE_REPO:-nirm3l/constructos}"
+DESKTOP_RELEASE_TAG="${DESKTOP_RELEASE_TAG:-desktop-latest}"
 DESKTOP_INSTALL_DIR="${DESKTOP_INSTALL_DIR:-${HOME}/Applications}"
 INSTALL_OLLAMA="${INSTALL_OLLAMA:-auto}"
 DEPLOY_OLLAMA_MODE="${DEPLOY_OLLAMA_MODE:-}"
@@ -328,6 +328,53 @@ detect_prompt_device() {
   return 1
 }
 
+desktop_release_token() {
+  local token="${DESKTOP_RELEASE_TOKEN:-}"
+  if [[ -n "$token" ]]; then
+    printf '%s' "$token"
+    return 0
+  fi
+  token="${GITHUB_TOKEN:-}"
+  if [[ -n "$token" ]]; then
+    printf '%s' "$token"
+    return 0
+  fi
+  token="${GITHUB_PAT:-}"
+  if [[ -n "$token" ]]; then
+    printf '%s' "$token"
+    return 0
+  fi
+  return 1
+}
+
+curl_release_api() {
+  local url="$1"
+  local token=""
+  token="$(desktop_release_token || true)"
+  if [[ -n "$token" ]]; then
+    curl -fsSL \
+      -H "Accept: application/vnd.github+json" \
+      -H "Authorization: Bearer ${token}" \
+      "$url"
+    return
+  fi
+  curl -fsSL "$url"
+}
+
+curl_release_asset() {
+  local url="$1"
+  local out="$2"
+  local token=""
+  token="$(desktop_release_token || true)"
+  if [[ -n "$token" ]]; then
+    curl -fsSL --retry 3 \
+      -H "Authorization: Bearer ${token}" \
+      "$url" -o "$out"
+    return
+  fi
+  curl -fsSL --retry 3 "$url" -o "$out"
+}
+
 prompt_yes_no() {
   local prompt="$1"
   local default_yes="${2:-true}"
@@ -374,7 +421,11 @@ desktop_release_api_url() {
   if [[ -z "$repo" ]]; then
     return 1
   fi
-  if [[ "$tag" == "latest" || -z "$tag" ]]; then
+  if [[ -z "$tag" || "$tag" == "desktop-latest" ]]; then
+    printf '%s' "https://api.github.com/repos/${repo}/releases?per_page=30"
+    return 0
+  fi
+  if [[ "$tag" == "latest" ]]; then
     printf '%s' "https://api.github.com/repos/${repo}/releases/latest"
     return 0
   fi
@@ -389,24 +440,52 @@ desktop_release_asset_url() {
   if [[ -z "$api_url" ]]; then
     return 1
   fi
-  payload="$(curl -fsSL "$api_url" 2>/dev/null || true)"
+  payload="$(curl_release_api "$api_url" 2>/dev/null || true)"
   if [[ -z "$payload" ]]; then
     return 1
   fi
   if ! command -v python3 >/dev/null 2>&1; then
     return 1
   fi
-  printf '%s' "$payload" | python3 - "$host_os" <<'PY'
+  printf '%s' "$payload" | python3 - "$host_os" "${DESKTOP_RELEASE_TAG}" <<'PY'
 import json
 import sys
 
 host_os = (sys.argv[1] if len(sys.argv) > 1 else "").strip().lower()
+release_tag = (sys.argv[2] if len(sys.argv) > 2 else "").strip()
 try:
     payload = json.load(sys.stdin)
 except Exception:
     sys.exit(0)
 
-assets = payload.get("assets")
+selected_release = None
+if isinstance(payload, list):
+    if not release_tag or release_tag == "desktop-latest":
+        for release in payload:
+            if not isinstance(release, dict):
+                continue
+            if bool(release.get("draft")) or bool(release.get("prerelease")):
+                continue
+            tag_name = str(release.get("tag_name") or "").strip().lower()
+            if not tag_name.startswith("desktop-v"):
+                continue
+            selected_release = release
+            break
+    else:
+        for release in payload:
+            if not isinstance(release, dict):
+                continue
+            tag_name = str(release.get("tag_name") or "").strip()
+            if tag_name == release_tag:
+                selected_release = release
+                break
+elif isinstance(payload, dict):
+    selected_release = payload
+
+if not isinstance(selected_release, dict):
+    sys.exit(0)
+
+assets = selected_release.get("assets")
 if not isinstance(assets, list):
     sys.exit(0)
 
@@ -429,7 +508,7 @@ for asset in assets:
     url = str(asset.get("browser_download_url") or "").strip()
     if not url:
         continue
-    lowered = url.lower()
+    lowered = url.lower().split("?", 1)[0]
     if any(lowered.endswith(ext) for ext in extensions):
         print(url)
         sys.exit(0)
@@ -442,7 +521,12 @@ install_desktop_app() {
   local asset_url=""
   asset_url="$(desktop_release_asset_url "$host_os" || true)"
   if [[ -z "$asset_url" ]]; then
-    log_warn "Desktop installer asset was not found for host OS (${host_os})."
+    local token=""
+    token="$(desktop_release_token || true)"
+    log_warn "Desktop installer asset was not found for host OS (${host_os}) in ${DESKTOP_RELEASE_REPO}@${DESKTOP_RELEASE_TAG}."
+    if [[ -z "$token" ]]; then
+      log_warn "If the release repository is private, set GITHUB_PAT, GITHUB_TOKEN, or DESKTOP_RELEASE_TOKEN."
+    fi
     log_warn "Set DESKTOP_RELEASE_REPO / DESKTOP_RELEASE_TAG if needed."
     return 0
   fi
@@ -452,7 +536,7 @@ install_desktop_app() {
       local target_dir="${DESKTOP_INSTALL_DIR}"
       local target_path="${target_dir}/ConstructOS.AppImage"
       mkdir -p "$target_dir"
-      if ! curl -fsSL --retry 3 "$asset_url" -o "$target_path"; then
+      if ! curl_release_asset "$asset_url" "$target_path"; then
         log_warn "Failed to download desktop AppImage."
         return 0
       fi
@@ -465,7 +549,7 @@ install_desktop_app() {
     macos)
       local dmg_path
       dmg_path="$(mktemp -t constructos-desktop.XXXXXX.dmg)"
-      if ! curl -fsSL --retry 3 "$asset_url" -o "$dmg_path"; then
+      if ! curl_release_asset "$asset_url" "$dmg_path"; then
         log_warn "Failed to download desktop DMG."
         return 0
       fi
