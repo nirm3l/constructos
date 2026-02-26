@@ -523,6 +523,142 @@ run_compose_step() {
   exit 1
 }
 
+can_prompt_user() {
+  local tty_fd=""
+  if [[ -t 0 ]]; then
+    return 0
+  fi
+  if [[ -t 1 ]] && exec {tty_fd}<>/dev/tty 2>/dev/null; then
+    exec {tty_fd}>&-
+    return 0
+  fi
+  return 1
+}
+
+trim_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+prompt_yes_no() {
+  local message="$1"
+  local default_choice="${2:-y}"
+  local response=""
+  local tty_fd=""
+
+  if [[ -t 0 ]]; then
+    read -r -p "$message" response
+  elif [[ -t 1 ]] && exec {tty_fd}<>/dev/tty 2>/dev/null; then
+    printf '%s' "$message" >&"$tty_fd"
+    if ! read -r response <&"$tty_fd"; then
+      exec {tty_fd}>&-
+      return 1
+    fi
+    exec {tty_fd}>&-
+  else
+    return 1
+  fi
+
+  response="$(trim_whitespace "$response")"
+  response="$(echo "$response" | tr '[:upper:]' '[:lower:]')"
+
+  if [[ -z "$response" ]]; then
+    response="$default_choice"
+  fi
+
+  case "$response" in
+    y | yes)
+      return 0
+      ;;
+    n | no)
+      return 1
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+bootstrap_codex_auth_via_container() {
+  local bootstrap_image="$1"
+  local codex_config_file="$2"
+  local codex_auth_file="$3"
+  local auth_dir=""
+  local bootstrap_volume=""
+  local login_rc=0
+  local auth_payload=""
+
+  auth_dir="$(dirname "$codex_auth_file")"
+  mkdir -p "$auth_dir"
+
+  bootstrap_volume="constructos-codex-auth-bootstrap-$(date +%s)-$RANDOM"
+
+  run_compose_step "Prepare Codex bootstrap image" docker pull "$bootstrap_image"
+
+  if ! docker volume create "$bootstrap_volume" >/dev/null; then
+    log_error "Failed to create temporary Docker volume for Codex auth bootstrap."
+    return 1
+  fi
+
+  log_info "Starting Codex device authentication inside a temporary container."
+  log_info "Complete login in this terminal when Codex prints the device-auth URL and code."
+
+  set +e
+  if [[ -t 0 ]]; then
+    docker run --rm -it \
+      -e HOME=/home/app/codex-home/auth-bootstrap \
+      -v "${bootstrap_volume}:/home/app/codex-home" \
+      -v "${codex_config_file}:/home/app/.codex/config.toml:ro" \
+      --entrypoint bash \
+      "$bootstrap_image" \
+      -lc 'set -euo pipefail; mkdir -p "$HOME/.codex"; codex login --device-auth; test -s "$HOME/.codex/auth.json"'
+    login_rc=$?
+  else
+    docker run --rm -it \
+      -e HOME=/home/app/codex-home/auth-bootstrap \
+      -v "${bootstrap_volume}:/home/app/codex-home" \
+      -v "${codex_config_file}:/home/app/.codex/config.toml:ro" \
+      --entrypoint bash \
+      "$bootstrap_image" \
+      -lc 'set -euo pipefail; mkdir -p "$HOME/.codex"; codex login --device-auth; test -s "$HOME/.codex/auth.json"' </dev/tty >/dev/tty 2>/dev/tty
+    login_rc=$?
+  fi
+  set -e
+
+  if [[ "$login_rc" -ne 0 ]]; then
+    docker volume rm -f "$bootstrap_volume" >/dev/null 2>&1 || true
+    log_error "Codex device authentication failed inside container."
+    return 1
+  fi
+
+  if ! auth_payload="$(docker run --rm \
+    -v "${bootstrap_volume}:/home/app/codex-home" \
+    --entrypoint sh \
+    "$bootstrap_image" \
+    -lc 'cat /home/app/codex-home/auth-bootstrap/.codex/auth.json' 2>/dev/null)"; then
+    docker volume rm -f "$bootstrap_volume" >/dev/null 2>&1 || true
+    log_error "Unable to export generated Codex auth file from bootstrap container."
+    return 1
+  fi
+
+  if [[ -z "$auth_payload" ]]; then
+    docker volume rm -f "$bootstrap_volume" >/dev/null 2>&1 || true
+    log_error "Bootstrap container did not produce a Codex auth payload."
+    return 1
+  fi
+
+  printf '%s\n' "$auth_payload" >"$codex_auth_file"
+  if ! chmod a+r "$codex_auth_file" 2>/dev/null; then
+    log_warn "Unable to adjust read permissions for $codex_auth_file"
+  fi
+
+  docker volume rm -f "$bootstrap_volume" >/dev/null 2>&1 || true
+  log_info "Saved container-generated Codex auth to: $codex_auth_file"
+  return 0
+}
+
 if [[ -z "$DEPLOY_TARGET" ]]; then
   DEPLOY_TARGET="$(resolve_compose_env_value "DEPLOY_TARGET" || true)"
 fi
@@ -538,6 +674,7 @@ if [[ -z "$IMAGE_TAG" ]]; then
   log_error "Set it in shell env or in .env."
   exit 1
 fi
+CODEX_BOOTSTRAP_IMAGE="ghcr.io/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-task-app:${IMAGE_TAG}"
 
 if [[ -z "$CODEX_CONFIG_FILE" ]]; then
   CODEX_CONFIG_FILE="$(resolve_compose_env_value "CODEX_CONFIG_FILE" || true)"
@@ -573,9 +710,24 @@ if [[ ! -f "$CODEX_CONFIG_FILE" ]]; then
   exit 1
 fi
 if [[ ! -f "$CODEX_AUTH_FILE" ]]; then
-  log_error "Missing Codex auth file: $CODEX_AUTH_FILE"
-  log_error "Run codex login on host or set CODEX_AUTH_FILE before deploy."
-  exit 1
+  log_warn "Codex authentication file was not found on host: $CODEX_AUTH_FILE"
+  log_info "Falling back to in-container device authentication (codex login --device-auth)."
+  if ! can_prompt_user; then
+    log_error "Interactive terminal is required to bootstrap Codex auth in container."
+    log_error "Run codex login on host, set CODEX_AUTH_FILE, or re-run deploy interactively."
+    exit 1
+  fi
+
+  if prompt_yes_no "Run 'codex login --device-auth' in a temporary container now? [Y/n] " "y"; then
+    if ! bootstrap_codex_auth_via_container "$CODEX_BOOTSTRAP_IMAGE" "$CODEX_CONFIG_FILE" "$CODEX_AUTH_FILE"; then
+      log_error "Could not bootstrap Codex auth via container."
+      exit 1
+    fi
+  else
+    log_error "Deployment requires Codex auth."
+    log_error "Run codex login on host or set CODEX_AUTH_FILE before deploy."
+    exit 1
+  fi
 fi
 
 if ! chmod a+r "$CODEX_CONFIG_FILE" 2>/dev/null; then

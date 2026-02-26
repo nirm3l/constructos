@@ -635,6 +635,11 @@ install_ollama
 install_cos_cli "$INSTALL_DIR"
 log_info "Selected Ollama deploy mode: ${DEPLOY_OLLAMA_MODE}"
 
+if [[ -n "$CODEX_AUTH_FILE" && ! -f "$CODEX_AUTH_FILE" ]]; then
+  log_warn "Codex authentication file was not found on host: ${CODEX_AUTH_FILE}."
+  log_info "During deploy, Constructos can fall back to in-container device authentication (codex login --device-auth)."
+fi
+
 if is_truthy "$AUTO_DEPLOY"; then
   if [[ -z "$LICENSE_SERVER_TOKEN" ]]; then
     log_error "AUTO_DEPLOY requires LICENSE_SERVER_TOKEN or ACTIVATION_CODE."

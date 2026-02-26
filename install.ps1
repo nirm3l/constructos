@@ -513,6 +513,108 @@ function Wait-AppReady {
     return $false
 }
 
+function Confirm-YesNo {
+    param(
+        [string]$Prompt,
+        [bool]$DefaultYes = $true
+    )
+
+    if (-not (Test-InteractiveSession)) {
+        return $false
+    }
+
+    $suffix = if ($DefaultYes) { "[Y/n]" } else { "[y/N]" }
+    $response = Read-Host "$Prompt $suffix"
+    $normalized = ([string]$response).Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        return $DefaultYes
+    }
+
+    return $normalized -in @("y", "yes")
+}
+
+function Ensure-CodexAuthFile {
+    param(
+        [string]$CodexConfigFile,
+        [string]$CodexAuthFile,
+        [string]$ImageTag
+    )
+
+    if (Test-Path -LiteralPath $CodexAuthFile -PathType Leaf) {
+        return
+    }
+
+    if (-not (Test-Path -LiteralPath $CodexConfigFile -PathType Leaf)) {
+        throw "Missing Codex config file: $CodexConfigFile"
+    }
+
+    Write-WarnMessage "Codex authentication file was not found on host: $CodexAuthFile"
+    Write-Info "Falling back to in-container device authentication (codex login --device-auth)."
+    if (-not (Confirm-YesNo -Prompt "Run 'codex login --device-auth' in a temporary container now?" -DefaultYes $true)) {
+        throw "Deployment requires Codex auth. Run codex login on host or set CODEX_AUTH_FILE."
+    }
+
+    Ensure-DockerAvailable -Required $true | Out-Null
+
+    $authDir = Split-Path -Path $CodexAuthFile -Parent
+    if (-not [string]::IsNullOrWhiteSpace($authDir)) {
+        New-Item -ItemType Directory -Path $authDir -Force | Out-Null
+    }
+
+    $bootstrapImage = "ghcr.io/nirm3l/constructos-task-app:$ImageTag"
+    $bootstrapVolume = "constructos-codex-auth-bootstrap-{0}" -f ([Guid]::NewGuid().ToString("N"))
+
+    Write-Info "Preparing Codex bootstrap image..."
+    & docker pull $bootstrapImage
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to pull bootstrap image: $bootstrapImage"
+    }
+
+    & docker volume create $bootstrapVolume *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to create temporary Docker volume for Codex auth bootstrap."
+    }
+
+    try {
+        Write-Info "Starting Codex device authentication inside a temporary container."
+        Write-Info "Complete login in this terminal when Codex prints the device-auth URL and code."
+
+        $loginArgs = @(
+            "run", "--rm", "-it",
+            "-e", "HOME=/home/app/codex-home/auth-bootstrap",
+            "-v", "$bootstrapVolume`:/home/app/codex-home",
+            "-v", "$CodexConfigFile`:/home/app/.codex/config.toml:ro",
+            "--entrypoint", "bash",
+            $bootstrapImage,
+            "-lc", 'set -euo pipefail; mkdir -p "$HOME/.codex"; codex login --device-auth; test -s "$HOME/.codex/auth.json"'
+        )
+        & docker @loginArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "Codex device authentication failed inside container."
+        }
+
+        $readArgs = @(
+            "run", "--rm",
+            "-v", "$bootstrapVolume`:/home/app/codex-home",
+            "--entrypoint", "sh",
+            $bootstrapImage,
+            "-lc", "cat /home/app/codex-home/auth-bootstrap/.codex/auth.json"
+        )
+        $authPayload = (& docker @readArgs)
+        $authPayloadText = if ($authPayload -is [System.Array]) { [string]::Join([Environment]::NewLine, $authPayload) } else { [string]$authPayload }
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($authPayloadText)) {
+            throw "Unable to export generated Codex auth file from bootstrap container."
+        }
+
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($CodexAuthFile, $authPayloadText.Trim(), $utf8NoBom)
+        Write-Info "Saved container-generated Codex auth to: $CodexAuthFile"
+    }
+    finally {
+        & docker volume rm -f $bootstrapVolume *> $null
+    }
+}
+
 function Invoke-ConstructosDeploy {
     param(
         [string]$InstallPath,
@@ -754,6 +856,7 @@ try {
             $CodexAuthFile = Resolve-AbsolutePath -PathValue "$HOME/.codex/auth.json" -BasePath $installPath
         }
 
+        Ensure-CodexAuthFile -CodexConfigFile $CodexConfigFile -CodexAuthFile $CodexAuthFile -ImageTag $ImageTag
         Invoke-ConstructosDeploy -InstallPath $installPath -ImageTag $ImageTag -LicenseServerToken $LicenseServerToken -CodexConfigFile (Normalize-ComposePath -PathValue $CodexConfigFile) -CodexAuthFile (Normalize-ComposePath -PathValue $CodexAuthFile) -RequestedOllamaMode $requestedOllamaMode
         exit 0
     }

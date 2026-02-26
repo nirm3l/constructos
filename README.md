@@ -68,6 +68,7 @@ Platform defaults:
 - `task-app` mounts a repository-scoped Codex config file (`./codex.config.toml` by default) to `/home/app/.codex/config.toml`.
 - `task-app` mounts your Codex auth file (`${HOME}/.codex/auth.json` by default) to `/home/app/.codex/auth.json`.
 - Override either path with `CODEX_CONFIG_FILE` or `CODEX_AUTH_FILE` in `.env` or shell env before deploy.
+- If `CODEX_AUTH_FILE` is missing during deploy, installer/deploy now offers an interactive fallback: run `codex login --device-auth` inside a temporary container, then persist the generated auth JSON to `CODEX_AUTH_FILE`.
 
 ## Optional: Jira MCP (separate compose)
 1. Create local env file:
