@@ -93,6 +93,7 @@ services:
       DEFAULT_EMBEDDING_MODEL: "${DEFAULT_EMBEDDING_MODEL:-nomic-embed-text}"
       ALLOWED_EMBEDDING_MODELS: "${ALLOWED_EMBEDDING_MODELS:-nomic-embed-text,mxbai-embed-large,embeddinggemma}"
       OLLAMA_EMBED_GPU_ENABLED: "${OLLAMA_EMBED_GPU_ENABLED:-true}"
+      HOST_OPERATING_SYSTEM: "${HOST_OPERATING_SYSTEM:-}"
       LICENSE_SERVER_TOKEN: "${LICENSE_SERVER_TOKEN:-}"
     volumes:
       - ${CODEX_CONFIG_FILE}:/home/app/.codex/config.toml:ro
@@ -160,6 +161,7 @@ services:
       DEFAULT_EMBEDDING_MODEL: "${DEFAULT_EMBEDDING_MODEL:-nomic-embed-text}"
       ALLOWED_EMBEDDING_MODELS: "${ALLOWED_EMBEDDING_MODELS:-nomic-embed-text,mxbai-embed-large,embeddinggemma}"
       OLLAMA_EMBED_GPU_ENABLED: "${OLLAMA_EMBED_GPU_ENABLED:-true}"
+      HOST_OPERATING_SYSTEM: "${HOST_OPERATING_SYSTEM:-}"
       LICENSE_SERVER_TOKEN: "${LICENSE_SERVER_TOKEN:-}"
     security_opt:
       - no-new-privileges:true

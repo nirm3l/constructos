@@ -650,6 +650,7 @@ if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then
   ENV_FILE_PATH="$(prepare_env_file "$INSTALL_DIR")"
   upsert_env_value "$ENV_FILE_PATH" "IMAGE_TAG" "$IMAGE_TAG"
   upsert_env_value "$ENV_FILE_PATH" "LICENSE_SERVER_TOKEN" "$LICENSE_SERVER_TOKEN"
+  upsert_env_value "$ENV_FILE_PATH" "HOST_OPERATING_SYSTEM" "$HOST_OS"
   upsert_env_value "$ENV_FILE_PATH" "CODEX_CONFIG_FILE" "$CODEX_CONFIG_FILE"
   upsert_env_value "$ENV_FILE_PATH" "CODEX_AUTH_FILE" "$CODEX_AUTH_FILE"
   upsert_env_value "$ENV_FILE_PATH" "DEPLOY_OLLAMA_MODE" "$DEPLOY_OLLAMA_MODE"
