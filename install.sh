@@ -626,6 +626,10 @@ curl -fsSL --retry 3 "$ARCHIVE_URL" -o "$TMP_ARCHIVE"
 mkdir -p "$INSTALL_DIR"
 # GitHub source archives are rooted at <repo>-<ref>/
 tar -xzf "$TMP_ARCHIVE" -C "$INSTALL_DIR" --strip-components=1
+chmod +x \
+  "$INSTALL_DIR/install.sh" \
+  "$INSTALL_DIR/uninstall.sh" \
+  "$INSTALL_DIR/scripts/deploy.sh" 2>/dev/null || true
 
 if [[ -z "$LICENSE_SERVER_TOKEN" && -n "$ACTIVATION_CODE" ]]; then
   exchange_license_token "$ACTIVATION_CODE"
