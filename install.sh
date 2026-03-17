@@ -649,7 +649,7 @@ log_info "Selected Ollama deploy mode: ${DEPLOY_OLLAMA_MODE}"
 
 if [[ -n "$CODEX_AUTH_FILE" && ! -f "$CODEX_AUTH_FILE" ]]; then
   log_warn "Codex authentication file was not found on host: ${CODEX_AUTH_FILE}."
-  log_info "During deploy, Constructos can fall back to in-container device authentication (codex login --device-auth)."
+  log_info "Deploy will continue without Codex authentication unless you provide the file later."
 fi
 
 if is_truthy "$AUTO_DEPLOY"; then

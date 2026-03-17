@@ -1,0 +1,4 @@
+services:
+  task-app:
+    volumes:
+      - ${CODEX_AUTH_FILE}:/home/app/.codex/auth.json:ro

@@ -96,7 +96,6 @@ services:
       LICENSE_SERVER_TOKEN: "${LICENSE_SERVER_TOKEN:-}"
     volumes:
       - ${CODEX_CONFIG_FILE}:/home/app/.codex/config.toml:ro
-      - ${CODEX_AUTH_FILE}:/home/app/.codex/auth.json:ro
       - codex-home-data:/home/app/codex-home
     ports:
       - "${APP_PORT:-1102}:8000"
