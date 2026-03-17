@@ -135,12 +135,24 @@ docker_install_hint() {
       echo "Install Docker Desktop and start it before deploy."
       ;;
     linux)
-      echo "Install Docker Engine + Docker Compose plugin and start the docker service."
+      echo "Install Docker Engine with Compose support ('docker compose' or 'docker-compose') and start the docker service."
       ;;
     *)
       echo "Install Docker with Compose support and ensure the daemon is running."
       ;;
   esac
+}
+
+resolve_compose_cmd() {
+  if docker compose version >/dev/null 2>&1; then
+    COMPOSE_CMD=(docker compose)
+    return 0
+  fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE_CMD=(docker-compose)
+    return 0
+  fi
+  return 1
 }
 
 ensure_docker_available() {
@@ -158,13 +170,13 @@ ensure_docker_available() {
     return 1
   fi
 
-  if ! docker compose version >/dev/null 2>&1; then
+  if ! resolve_compose_cmd; then
     if [[ "$required" == "true" ]]; then
-      log_error "Docker Compose plugin is required but unavailable."
+      log_error "Docker Compose is required but unavailable."
       log_error "$(docker_install_hint "$host_os")"
       exit 1
     fi
-    log_warn "Docker Compose plugin is missing. Deploy will fail until it is installed."
+    log_warn "Docker Compose is missing. Deploy will fail until it is installed."
     return 1
   fi
 

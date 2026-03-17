@@ -237,12 +237,24 @@ docker_install_hint() {
       echo "Install Docker Desktop, then start it before deploy."
       ;;
     linux)
-      echo "Install Docker Engine + Docker Compose plugin, then start the docker service."
+      echo "Install Docker Engine with Compose support ('docker compose' or 'docker-compose'), then start the docker service."
       ;;
     *)
       echo "Install Docker with Compose support and ensure the daemon is running."
       ;;
   esac
+}
+
+resolve_compose_cmd() {
+  if docker compose version >/dev/null 2>&1; then
+    COMPOSE_CMD=(docker compose)
+    return 0
+  fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE_CMD=(docker-compose)
+    return 0
+  fi
+  return 1
 }
 
 require_docker() {
@@ -254,8 +266,8 @@ require_docker() {
     exit 1
   fi
 
-  if ! docker compose version >/dev/null 2>&1; then
-    log_error "Docker Compose plugin is required but unavailable."
+  if ! resolve_compose_cmd; then
+    log_error "Docker Compose is required but unavailable."
     log_error "$(docker_install_hint "$host_os")"
     exit 1
   fi
@@ -673,7 +685,7 @@ log_info "Services: ${DEPLOY_SERVICES[*]}"
 
 run_compose_step \
   "Pull images" \
-  docker compose "${COMPOSE_ARGS[@]}" --env-file .deploy.env pull --quiet "${DEPLOY_SERVICES[@]}"
+  "${COMPOSE_CMD[@]}" "${COMPOSE_ARGS[@]}" --env-file .deploy.env pull --quiet "${DEPLOY_SERVICES[@]}"
 
 if [[ ! -f "$CODEX_AUTH_FILE" ]]; then
   log_warn "Codex authentication file was not found on host: $CODEX_AUTH_FILE"
@@ -684,10 +696,10 @@ fi
 
 run_compose_step \
   "Start services" \
-  docker compose "${COMPOSE_ARGS[@]}" --env-file .deploy.env up -d --no-build --quiet-pull "${DEPLOY_SERVICES[@]}"
+  "${COMPOSE_CMD[@]}" "${COMPOSE_ARGS[@]}" --env-file .deploy.env up -d --no-build --quiet-pull "${DEPLOY_SERVICES[@]}"
 
 log_info "Deployment completed. Active services:"
-docker compose "${COMPOSE_ARGS[@]}" --env-file .deploy.env ps
+"${COMPOSE_CMD[@]}" "${COMPOSE_ARGS[@]}" --env-file .deploy.env ps
 
 APP_HOST_VALUE="$(resolve_app_host)"
 APP_PORT_VALUE="$(resolve_app_port)"
