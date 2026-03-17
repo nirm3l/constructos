@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ -n "${BASH_SOURCE[0]:-}" && "${BASH_SOURCE[0]}" != "bash" ]]; then
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -n "${0:-}" && "${0}" != "bash" && "${0}" != "-" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${0}")" && pwd)"
 else
   SCRIPT_DIR="$(pwd)"
 fi
