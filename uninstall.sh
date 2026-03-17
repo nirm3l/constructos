@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-INSTALL_DIR="${INSTALL_DIR:-./constructos-client}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_DIR="${INSTALL_DIR:-${SCRIPT_DIR}}"
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-}"
 REMOVE_APP_DATA="${REMOVE_APP_DATA:-false}"
 REMOVE_IMAGES="${REMOVE_IMAGES:-false}"
@@ -61,6 +62,19 @@ resolve_install_dir() {
 resolve_compose_project_name() {
   if [[ -n "${COMPOSE_PROJECT_NAME}" ]]; then
     printf '%s' "${COMPOSE_PROJECT_NAME}"
+    return 0
+  fi
+  local detected_project=""
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    detected_project="$(
+      docker ps -a --format '{{.Label "com.docker.compose.project"}} {{.Image}}' \
+        | awk '$1 != "" && $2 ~ /^ghcr\.io\/nirm3l\/constructos-(task-app|mcp-tools):/ {print $1}' \
+        | sort -u \
+        | head -n 1
+    )"
+  fi
+  if [[ -n "${detected_project}" ]]; then
+    printf '%s' "${detected_project}"
     return 0
   fi
   local install_path="$1"
