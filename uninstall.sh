@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -n "${BASH_SOURCE[0]:-}" && "${BASH_SOURCE[0]}" != "bash" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+  SCRIPT_DIR="$(pwd)"
+fi
 INSTALL_DIR="${INSTALL_DIR:-${SCRIPT_DIR}}"
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-}"
 REMOVE_APP_DATA="${REMOVE_APP_DATA:-false}"
