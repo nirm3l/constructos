@@ -6,6 +6,7 @@ REPO_NAME="${REPO_NAME:-constructos}"
 REPO_REF="${REPO_REF:-main}"
 INSTALL_DIR="${INSTALL_DIR:-./constructos-client}"
 IMAGE_TAG="${IMAGE_TAG:-}"
+LICENSE_INSTALLATION_ID="${LICENSE_INSTALLATION_ID:-}"
 LICENSE_SERVER_TOKEN="${LICENSE_SERVER_TOKEN:-}"
 ACTIVATION_CODE="${ACTIVATION_CODE:-}"
 LICENSE_SERVER_URL="${LICENSE_SERVER_URL:-https://licence.constructos.dev}"
@@ -46,6 +47,135 @@ log_warn() {
 
 log_error() {
   printf '%b%s%b\n' "$LOG_COLOR_ERROR" "[ERROR] $*" "$LOG_COLOR_RESET" >&2
+}
+
+resolve_installation_state_file() {
+  printf '%s/.constructos/license-installation-id' "${HOME}"
+}
+
+hash_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+    return 0
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print $1}'
+    return 0
+  fi
+  if command -v openssl >/dev/null 2>&1; then
+    openssl dgst -sha256 | awk '{print $NF}'
+    return 0
+  fi
+  return 1
+}
+
+read_persisted_installation_id() {
+  local state_file
+  state_file="$(resolve_installation_state_file)"
+  if [[ -f "$state_file" ]]; then
+    tr -d '\r\n' <"$state_file"
+  fi
+}
+
+persist_installation_id() {
+  local installation_id="$1"
+  local state_file state_dir
+  state_file="$(resolve_installation_state_file)"
+  state_dir="$(dirname "$state_file")"
+  mkdir -p "$state_dir"
+  printf '%s\n' "$installation_id" >"$state_file"
+}
+
+resolve_host_machine_id() {
+  local host_os="$1"
+  local machine_id=""
+
+  case "$host_os" in
+    linux)
+      if [[ -r /etc/machine-id ]]; then
+        machine_id="$(tr -d '\r\n[:space:]' </etc/machine-id)"
+      elif [[ -r /var/lib/dbus/machine-id ]]; then
+        machine_id="$(tr -d '\r\n[:space:]' </var/lib/dbus/machine-id)"
+      fi
+      ;;
+    macos)
+      if command -v ioreg >/dev/null 2>&1; then
+        machine_id="$(ioreg -rd1 -c IOPlatformExpertDevice 2>/dev/null | awk -F'"' '/IOPlatformUUID/ {print $4; exit}')"
+        machine_id="$(printf '%s' "$machine_id" | tr -d '\r\n[:space:]')"
+      fi
+      ;;
+    windows)
+      if command -v powershell.exe >/dev/null 2>&1; then
+        machine_id="$(
+          powershell.exe -NoProfile -Command "[string](Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Cryptography').MachineGuid" \
+            2>/dev/null \
+            | tr -d '\r\n[:space:]'
+        )"
+      elif command -v reg.exe >/dev/null 2>&1; then
+        machine_id="$(
+          reg.exe query 'HKLM\SOFTWARE\Microsoft\Cryptography' /v MachineGuid 2>/dev/null \
+            | awk '/MachineGuid/ {print $NF; exit}' \
+            | tr -d '\r\n[:space:]'
+        )"
+      fi
+      ;;
+  esac
+
+  printf '%s' "$machine_id"
+}
+
+derive_installation_id_from_machine_id() {
+  local machine_id="$1"
+  local digest=""
+
+  if [[ -z "$machine_id" ]]; then
+    return 1
+  fi
+
+  digest="$(printf 'constructos:%s\n' "$machine_id" | hash_sha256 || true)"
+  if [[ -z "$digest" ]]; then
+    return 1
+  fi
+
+  printf 'inst-%s' "${digest:0:32}"
+}
+
+ensure_license_installation_id() {
+  local explicit_id=""
+  local machine_id=""
+  local derived_id=""
+  local persisted_id=""
+
+  explicit_id="$(printf '%s' "${LICENSE_INSTALLATION_ID}" | tr -d '\r\n[:space:]')"
+  if [[ -n "$explicit_id" ]]; then
+    LICENSE_INSTALLATION_ID="$explicit_id"
+    persist_installation_id "$LICENSE_INSTALLATION_ID"
+    return 0
+  fi
+
+  machine_id="$(resolve_host_machine_id "$HOST_OS")"
+  derived_id="$(derive_installation_id_from_machine_id "$machine_id" || true)"
+  if [[ -n "$derived_id" ]]; then
+    LICENSE_INSTALLATION_ID="$derived_id"
+    persist_installation_id "$LICENSE_INSTALLATION_ID"
+    log_info "Resolved stable license installation id from host machine id."
+    return 0
+  fi
+
+  persisted_id="$(read_persisted_installation_id || true)"
+  if [[ -n "$persisted_id" ]]; then
+    LICENSE_INSTALLATION_ID="$persisted_id"
+    log_info "Reusing persisted license installation id from $(resolve_installation_state_file)."
+    return 0
+  fi
+
+  if command -v uuidgen >/dev/null 2>&1; then
+    LICENSE_INSTALLATION_ID="inst-$(uuidgen | tr '[:upper:]' '[:lower:]' | tr -d '\r\n')"
+  else
+    LICENSE_INSTALLATION_ID="inst-$(date +%s)-$$"
+  fi
+  persist_installation_id "$LICENSE_INSTALLATION_ID"
+  log_warn "Host machine id was unavailable; generated and persisted a fallback license installation id."
 }
 
 is_truthy() {
@@ -613,6 +743,7 @@ exchange_license_token() {
 }
 
 HOST_OS="$(resolve_host_os)"
+ensure_license_installation_id
 ensure_docker_available "$HOST_OS" "false" || true
 resolve_requested_ollama_mode
 prompt_for_ollama_preference "$HOST_OS"
@@ -647,18 +778,26 @@ if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then
   if [[ -z "$CODEX_AUTH_FILE" ]]; then
     CODEX_AUTH_FILE="${HOME}/.codex/auth.json"
   fi
-  ENV_FILE_PATH="$(prepare_env_file "$INSTALL_DIR")"
-  upsert_env_value "$ENV_FILE_PATH" "IMAGE_TAG" "$IMAGE_TAG"
-  upsert_env_value "$ENV_FILE_PATH" "LICENSE_SERVER_TOKEN" "$LICENSE_SERVER_TOKEN"
-  upsert_env_value "$ENV_FILE_PATH" "HOST_OPERATING_SYSTEM" "$HOST_OS"
-  upsert_env_value "$ENV_FILE_PATH" "CODEX_CONFIG_FILE" "$CODEX_CONFIG_FILE"
-  upsert_env_value "$ENV_FILE_PATH" "CODEX_AUTH_FILE" "$CODEX_AUTH_FILE"
-  upsert_env_value "$ENV_FILE_PATH" "DEPLOY_OLLAMA_MODE" "$DEPLOY_OLLAMA_MODE"
-  if [[ "$HOST_OS" == "windows" ]]; then
-    upsert_env_value "$ENV_FILE_PATH" "DEPLOY_TARGET" "windows-desktop"
-  fi
-  log_info "Prepared ${ENV_FILE_PATH} with deploy settings."
 fi
+
+ENV_FILE_PATH="$(prepare_env_file "$INSTALL_DIR")"
+upsert_env_value "$ENV_FILE_PATH" "IMAGE_TAG" "$IMAGE_TAG"
+upsert_env_value "$ENV_FILE_PATH" "LICENSE_INSTALLATION_ID" "$LICENSE_INSTALLATION_ID"
+upsert_env_value "$ENV_FILE_PATH" "HOST_OPERATING_SYSTEM" "$HOST_OS"
+upsert_env_value "$ENV_FILE_PATH" "DEPLOY_OLLAMA_MODE" "$DEPLOY_OLLAMA_MODE"
+if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then
+  upsert_env_value "$ENV_FILE_PATH" "LICENSE_SERVER_TOKEN" "$LICENSE_SERVER_TOKEN"
+fi
+if [[ -n "$CODEX_CONFIG_FILE" ]]; then
+  upsert_env_value "$ENV_FILE_PATH" "CODEX_CONFIG_FILE" "$CODEX_CONFIG_FILE"
+fi
+if [[ -n "$CODEX_AUTH_FILE" ]]; then
+  upsert_env_value "$ENV_FILE_PATH" "CODEX_AUTH_FILE" "$CODEX_AUTH_FILE"
+fi
+if [[ "$HOST_OS" == "windows" ]]; then
+  upsert_env_value "$ENV_FILE_PATH" "DEPLOY_TARGET" "windows-desktop"
+fi
+log_info "Prepared ${ENV_FILE_PATH} with deploy settings."
 
 install_ollama
 install_cos_cli
@@ -706,7 +845,7 @@ if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then
   echo "3) IMAGE_TAG=${IMAGE_TAG} bash ./scripts/deploy.sh"
   echo "4) run 'cos --help' (if COS CLI was installed)"
 else
-  echo "2) cp .env.example .env (if missing)"
+  echo "2) .env is already prepared with IMAGE_TAG and LICENSE_INSTALLATION_ID"
   echo "3) set LICENSE_SERVER_TOKEN in .env"
   echo "4) IMAGE_TAG=${IMAGE_TAG} bash ./scripts/deploy.sh"
   echo "5) run 'cos --help' (if COS CLI was installed)"
