@@ -221,13 +221,13 @@ function Normalize-OllamaMode {
 }
 
 function Resolve-HostOperatingSystem {
-    if ($IsWindows) {
+    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
         return "windows"
     }
-    if ($IsMacOS) {
+    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::OSX)) {
         return "macos"
     }
-    if ($IsLinux) {
+    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Linux)) {
         return "linux"
     }
     return "unknown"
