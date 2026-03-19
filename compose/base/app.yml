@@ -115,12 +115,16 @@ services:
     volumes:
       - ${CODEX_CONFIG_FILE}:/home/app/.codex/config.toml:ro
       - codex-home-data:/home/app/codex-home
+    extra_hosts:
+      - "gateway:host-gateway"
     ports:
       - "${APP_PORT:-1102}:8000"
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    extra_hosts:
+      - "gateway:host-gateway"
     restart: unless-stopped
 
   mcp-tools:
