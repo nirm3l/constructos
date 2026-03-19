@@ -632,9 +632,11 @@ function Invoke-ConstructosDeploy {
     param(
         [string]$InstallPath,
         [string]$ImageTag,
+        [string]$LicenseInstallationId,
         [string]$LicenseServerToken,
         [string]$CodexConfigFile,
         [string]$CodexAuthFile,
+        [string]$ClaudeAuthFile,
         [string]$RequestedOllamaMode
     )
 
@@ -645,6 +647,9 @@ function Invoke-ConstructosDeploy {
     $composeFiles = @("compose/base/app.yml", "compose/platforms/windows.yml")
     if (Test-Path -LiteralPath $CodexAuthFile -PathType Leaf) {
         $composeFiles += "compose/codex/auth-file.yml"
+    }
+    if (Test-Path -LiteralPath $ClaudeAuthFile -PathType Leaf) {
+        $composeFiles += "compose/claude/auth-file.yml"
     }
     switch ($resolvedOllamaMode) {
         "host" { $composeFiles += "compose/ollama/host.yml" }
@@ -684,9 +689,12 @@ APP_BUILD=$appBuild
 APP_DEPLOYED_AT_UTC=$deployedAtUtc
 TASK_APP_IMAGE=$taskImage
 MCP_TOOLS_IMAGE=$mcpImage
+LICENSE_INSTALLATION_ID=$LicenseInstallationId
 LICENSE_SERVER_TOKEN=$LicenseServerToken
+HOST_OPERATING_SYSTEM=$(Resolve-HostOperatingSystem)
 CODEX_CONFIG_FILE=$CodexConfigFile
 CODEX_AUTH_FILE=$CodexAuthFile
+CLAUDE_AUTH_FILE=$ClaudeAuthFile
 "@
 
     $deployEnvPath = Join-Path $InstallPath ".deploy.env"
@@ -906,7 +914,7 @@ try {
             $ClaudeAuthFile = Resolve-AbsolutePath -PathValue "$HOME/.claude.json" -BasePath $installPath
         }
 
-        Invoke-ConstructosDeploy -InstallPath $installPath -ImageTag $ImageTag -LicenseServerToken $LicenseServerToken -CodexConfigFile (Normalize-ComposePath -PathValue $CodexConfigFile) -CodexAuthFile (Normalize-ComposePath -PathValue $CodexAuthFile) -RequestedOllamaMode $requestedOllamaMode
+        Invoke-ConstructosDeploy -InstallPath $installPath -ImageTag $ImageTag -LicenseInstallationId $LicenseInstallationId -LicenseServerToken $LicenseServerToken -CodexConfigFile (Normalize-ComposePath -PathValue $CodexConfigFile) -CodexAuthFile (Normalize-ComposePath -PathValue $CodexAuthFile) -ClaudeAuthFile (Normalize-ComposePath -PathValue $ClaudeAuthFile) -RequestedOllamaMode $requestedOllamaMode
         exit 0
     }
 
