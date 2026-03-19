@@ -55,12 +55,18 @@ services:
       - kurrentdb
       - neo4j
       - mcp-tools
+      - docker-socket-proxy
     environment:
       DATABASE_URL: "${DATABASE_URL:-postgresql+psycopg://m4tr1x:m4tr1x@postgres:5432/task_management}"
       EVENTSTORE_URI: esdb://kurrentdb:2113?tls=false
       APP_VERSION: "${APP_VERSION:-dev}"
       APP_BUILD: "${APP_BUILD:-}"
       APP_DEPLOYED_AT_UTC: "${APP_DEPLOYED_AT_UTC:-}"
+      AGENT_DOCKER_PROXY_URL: "tcp://docker-socket-proxy:2375"
+      DOCKER_BUILDKIT: "0"
+      COMPOSE_DOCKER_CLI_BUILD: "0"
+      AGENT_DOCKER_SOFT_ISOLATION: "true"
+      AGENT_DOCKER_ALLOWED_PROJECT_PREFIX: "constructos-ws-"
       AGENT_RUNNER_ENABLED: "${AGENT_RUNNER_ENABLED:-true}"
       AGENT_RUNNER_INTERVAL_SECONDS: "3"
       AGENT_RUNNER_APPLY_OUTCOME_MUTATIONS: "true"
@@ -71,6 +77,7 @@ services:
       AGENT_HOME_ROOT: "/home/app/agent-home"
       AGENT_WORKDIR: "/home/app/workspace"
       AGENT_DEFAULT_EXECUTION_PROVIDER: "${AGENT_DEFAULT_EXECUTION_PROVIDER:-codex}"
+      AGENT_DOCKER_PROJECT_NAME: "${AGENT_DOCKER_PROJECT_NAME:-constructos-ws-default}"
       AGENT_CODEX_DEFAULT_MODEL: "${AGENT_CODEX_DEFAULT_MODEL:-}"
       AGENT_CODEX_DEFAULT_REASONING_EFFORT: "${AGENT_CODEX_DEFAULT_REASONING_EFFORT:-medium}"
       AGENT_CLAUDE_DEFAULT_MODEL: "${AGENT_CLAUDE_DEFAULT_MODEL:-sonnet}"
@@ -174,6 +181,28 @@ services:
       HOST_OPERATING_SYSTEM: "${HOST_OPERATING_SYSTEM:-}"
       LICENSE_INSTALLATION_ID: "${LICENSE_INSTALLATION_ID:-}"
       LICENSE_SERVER_TOKEN: "${LICENSE_SERVER_TOKEN:-}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: docker-socket-proxy
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      INFO: 1
+      VERSION: 1
+      EVENTS: 1
+      POST: 1
+      DELETE: 1
+      BUILD: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     security_opt:
       - no-new-privileges:true
     cap_drop:

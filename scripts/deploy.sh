@@ -672,7 +672,7 @@ APP_BUILD="ghcr-${IMAGE_TAG}-${GIT_SHA}"
 TASK_APP_IMAGE="ghcr.io/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-task-app:${IMAGE_TAG}"
 MCP_TOOLS_IMAGE="ghcr.io/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-mcp-tools:${IMAGE_TAG}"
 
-DEPLOY_SERVICES=(task-app mcp-tools)
+DEPLOY_SERVICES=(task-app mcp-tools docker-socket-proxy)
 if [[ "$RESOLVED_OLLAMA_MODE" == "docker" || "$RESOLVED_OLLAMA_MODE" == "docker-gpu" ]]; then
   DEPLOY_SERVICES+=(ollama)
 fi

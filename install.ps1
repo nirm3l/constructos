@@ -659,6 +659,7 @@ function Invoke-ConstructosDeploy {
     $services = New-Object System.Collections.Generic.List[string]
     $services.Add("task-app")
     $services.Add("mcp-tools")
+    $services.Add("docker-socket-proxy")
     if ($resolvedOllamaMode -in @("docker", "docker-gpu")) {
         $services.Add("ollama")
     }
