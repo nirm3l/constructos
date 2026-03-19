@@ -1,3 +1,3 @@
 services:
   kurrentdb:
-    platform: linux/amd64
+    image: kurrentplatform/kurrentdb:26.0.2-experimental-arm64-10.0-noble
