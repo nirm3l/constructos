@@ -181,6 +181,8 @@ services:
       HOST_OPERATING_SYSTEM: "${HOST_OPERATING_SYSTEM:-}"
       LICENSE_INSTALLATION_ID: "${LICENSE_INSTALLATION_ID:-}"
       LICENSE_SERVER_TOKEN: "${LICENSE_SERVER_TOKEN:-}"
+    ports:
+      - "${MCP_PORT:-8091}:8091"
     security_opt:
       - no-new-privileges:true
     cap_drop:
