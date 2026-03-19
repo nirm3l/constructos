@@ -76,7 +76,6 @@ cd constructos
 - `CODEX_CONFIG_FILE` (default: `./codex.config.toml`)
 - `CODEX_AUTH_FILE` (default: `${HOME}/.codex/auth.json`)
 - `CLAUDE_AUTH_FILE` (default: `${HOME}/.claude.json`)
-- `CLAUDE_STATE_DIR` (default: `${HOME}/.claude`)
 - `INSTALL_COS=true|false` (default: `true`)
 - `COS_INSTALL_METHOD=pipx|link` (default: `pipx`)
 - `INSTALL_OLLAMA=auto|true|false` (default: `auto`)
@@ -106,8 +105,7 @@ Platform defaults:
 - `task-app` mounts `CODEX_CONFIG_FILE` to `/home/app/.codex/config.toml`.
 - `task-app` mounts `CODEX_AUTH_FILE` to `/home/app/.codex/auth.json` only when the file exists on host.
 - `task-app` mounts `CLAUDE_AUTH_FILE` to `/home/app/.claude.json` only when the file exists on host.
-- `task-app` mounts `CLAUDE_STATE_DIR` read-only and syncs it into writable `/home/app/.claude` only when the directory exists on host.
-- Override any of these paths with `CODEX_CONFIG_FILE`, `CODEX_AUTH_FILE`, `CLAUDE_AUTH_FILE`, or `CLAUDE_STATE_DIR` in `.env` or shell env before deploy.
+- Override any of these paths with `CODEX_CONFIG_FILE`, `CODEX_AUTH_FILE`, or `CLAUDE_AUTH_FILE` in `.env` or shell env before deploy.
 - If `CODEX_AUTH_FILE` is missing, deploy continues without Codex authentication.
 - If Claude host files are missing, deploy continues and Claude can still be configured through the app UI.
 
