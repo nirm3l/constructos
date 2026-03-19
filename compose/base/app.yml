@@ -73,7 +73,6 @@ services:
       AGENT_RUNNER_APPLY_OUTCOME_MUTATIONS: "true"
       AGENT_EXECUTION_COMMAND: "python -m features.agents.agent_mcp_adapter"
       AGENT_EXECUTOR_MODE: "command"
-      AGENT_EXECUTOR_TIMEOUT_SECONDS: "180"
       AGENT_CHAT_CONTEXT_LIMIT_TOKENS: "${AGENT_CHAT_CONTEXT_LIMIT_TOKENS:-400000}"
       AGENT_HOME_ROOT: "/home/app/agent-home"
       AGENT_WORKDIR: "/home/app/workspace"
@@ -144,7 +143,6 @@ services:
       MCP_SERVER_PORT: "8091"
       MCP_SERVER_PATH: /mcp
       MCP_SERVER_STATELESS_HTTP: "true"
-      AGENT_EXECUTOR_TIMEOUT_SECONDS: "180"
       AGENT_CHAT_CONTEXT_LIMIT_TOKENS: "${AGENT_CHAT_CONTEXT_LIMIT_TOKENS:-400000}"
       MCP_AUTH_TOKEN: "${MCP_AUTH_TOKEN:-dev-mcp-token}"
       MCP_TOOL_AUTH_TOKEN: "${MCP_TOOL_AUTH_TOKEN:-dev-mcp-token}"
