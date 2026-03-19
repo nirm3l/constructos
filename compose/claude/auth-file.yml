@@ -1,0 +1,4 @@
+services:
+  task-app:
+    volumes:
+      - ${CLAUDE_AUTH_FILE}:/home/app/.claude.json:ro

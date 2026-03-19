@@ -17,7 +17,8 @@ param(
     [string]$DeployOllamaMode = "",
     [string]$DeployWithOllama = "",
     [string]$CodexConfigFile = "",
-    [string]$CodexAuthFile = ""
+    [string]$CodexAuthFile = "",
+    [string]$ClaudeAuthFile = ""
 )
 
 Set-StrictMode -Version Latest
@@ -784,6 +785,7 @@ $DeployOllamaMode = Get-SettingValue -Current $DeployOllamaMode -EnvName "DEPLOY
 $DeployWithOllama = Get-SettingValue -Current $DeployWithOllama -EnvName "DEPLOY_WITH_OLLAMA" -DefaultValue ""
 $CodexConfigFile = Get-SettingValue -Current $CodexConfigFile -EnvName "CODEX_CONFIG_FILE" -DefaultValue ""
 $CodexAuthFile = Get-SettingValue -Current $CodexAuthFile -EnvName "CODEX_AUTH_FILE" -DefaultValue ""
+$ClaudeAuthFile = Get-SettingValue -Current $ClaudeAuthFile -EnvName "CLAUDE_AUTH_FILE" -DefaultValue ""
 $LicenseInstallationId = Ensure-LicenseInstallationId -ConfiguredValue $LicenseInstallationId
 
 $requestedOllamaMode = Resolve-RequestedOllamaMode -DeployOllamaMode $DeployOllamaMode -DeployWithOllama $DeployWithOllama
@@ -855,6 +857,9 @@ try {
         if ([string]::IsNullOrWhiteSpace($CodexAuthFile)) {
             $CodexAuthFile = "$HOME/.codex/auth.json"
         }
+        if ([string]::IsNullOrWhiteSpace($ClaudeAuthFile)) {
+            $ClaudeAuthFile = "$HOME/.claude.json"
+        }
 
         $resolvedConfig = Resolve-AbsolutePath -PathValue $CodexConfigFile -BasePath $installPath
         $resolvedAuth = Resolve-AbsolutePath -PathValue $CodexAuthFile -BasePath $installPath
@@ -877,6 +882,9 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($CodexAuthFile)) {
         Upsert-EnvValue -FilePath $envPath -Key "CODEX_AUTH_FILE" -Value (Normalize-ComposePath -PathValue $CodexAuthFile)
     }
+    if (-not [string]::IsNullOrWhiteSpace($ClaudeAuthFile)) {
+        Upsert-EnvValue -FilePath $envPath -Key "CLAUDE_AUTH_FILE" -Value (Normalize-ComposePath -PathValue $ClaudeAuthFile)
+    }
     Write-Info "Prepared $envPath with deploy settings."
 
     Install-OllamaIfNeeded -ResolvedMode $requestedOllamaMode -InstallOllama $InstallOllama
@@ -893,6 +901,9 @@ try {
         }
         if ([string]::IsNullOrWhiteSpace($CodexAuthFile)) {
             $CodexAuthFile = Resolve-AbsolutePath -PathValue "$HOME/.codex/auth.json" -BasePath $installPath
+        }
+        if ([string]::IsNullOrWhiteSpace($ClaudeAuthFile)) {
+            $ClaudeAuthFile = Resolve-AbsolutePath -PathValue "$HOME/.claude.json" -BasePath $installPath
         }
 
         Invoke-ConstructosDeploy -InstallPath $installPath -ImageTag $ImageTag -LicenseServerToken $LicenseServerToken -CodexConfigFile (Normalize-ComposePath -PathValue $CodexConfigFile) -CodexAuthFile (Normalize-ComposePath -PathValue $CodexAuthFile) -RequestedOllamaMode $requestedOllamaMode

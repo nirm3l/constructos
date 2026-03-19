@@ -14,6 +14,7 @@ GHCR_OWNER="nirm3l"
 GHCR_IMAGE_PREFIX="constructos"
 CODEX_CONFIG_FILE="${CODEX_CONFIG_FILE:-}"
 CODEX_AUTH_FILE="${CODEX_AUTH_FILE:-}"
+CLAUDE_AUTH_FILE="${CLAUDE_AUTH_FILE:-}"
 HOST_OS=""
 TARGET_RESOLVED=""
 REQUESTED_OLLAMA_MODE=""
@@ -572,6 +573,17 @@ if [[ "$CODEX_AUTH_FILE" != /* ]]; then
   CODEX_AUTH_FILE="${ROOT_DIR}/${CODEX_AUTH_FILE#./}"
 fi
 
+if [[ -z "$CLAUDE_AUTH_FILE" ]]; then
+  CLAUDE_AUTH_FILE="$(resolve_compose_env_value "CLAUDE_AUTH_FILE" || true)"
+fi
+if [[ -z "$CLAUDE_AUTH_FILE" ]]; then
+  CLAUDE_AUTH_FILE="${HOME}/.claude.json"
+fi
+CLAUDE_AUTH_FILE="$(normalize_host_path "$CLAUDE_AUTH_FILE")"
+if [[ "$CLAUDE_AUTH_FILE" != /* ]]; then
+  CLAUDE_AUTH_FILE="${ROOT_DIR}/${CLAUDE_AUTH_FILE#./}"
+fi
+
 LICENSE_SERVER_TOKEN_VALUE="$(resolve_compose_env_value "LICENSE_SERVER_TOKEN" || true)"
 if [[ -z "$LICENSE_SERVER_TOKEN_VALUE" ]]; then
   log_error "LICENSE_SERVER_TOKEN is required. Set it in .env or shell env."
@@ -595,6 +607,9 @@ resolve_runtime_ollama_mode "$REQUESTED_OLLAMA_MODE" "$TARGET_RESOLVED" "$HOST_O
 COMPOSE_FILES=(compose/base/app.yml)
 if [[ -f "$CODEX_AUTH_FILE" ]]; then
   COMPOSE_FILES+=(compose/codex/auth-file.yml)
+fi
+if [[ -f "$CLAUDE_AUTH_FILE" ]]; then
+  COMPOSE_FILES+=(compose/claude/auth-file.yml)
 fi
 case "$TARGET_RESOLVED" in
   base)
