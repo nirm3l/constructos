@@ -16,6 +16,7 @@ GHCR_IMAGE_PREFIX="constructos"
 CODEX_CONFIG_FILE="${CODEX_CONFIG_FILE:-}"
 CODEX_AUTH_FILE="${CODEX_AUTH_FILE:-}"
 CLAUDE_AUTH_FILE="${CLAUDE_AUTH_FILE:-}"
+CLAUDE_STATE_DIR="${CLAUDE_STATE_DIR:-}"
 HOST_OS=""
 TARGET_RESOLVED=""
 REQUESTED_OLLAMA_MODE=""
@@ -592,6 +593,17 @@ if [[ "$CLAUDE_AUTH_FILE" != /* ]]; then
   CLAUDE_AUTH_FILE="${ROOT_DIR}/${CLAUDE_AUTH_FILE#./}"
 fi
 
+if [[ -z "$CLAUDE_STATE_DIR" ]]; then
+  CLAUDE_STATE_DIR="$(resolve_compose_env_value "CLAUDE_STATE_DIR" || true)"
+fi
+if [[ -z "$CLAUDE_STATE_DIR" ]]; then
+  CLAUDE_STATE_DIR="${HOME}/.claude"
+fi
+CLAUDE_STATE_DIR="$(normalize_host_path "$CLAUDE_STATE_DIR")"
+if [[ "$CLAUDE_STATE_DIR" != /* ]]; then
+  CLAUDE_STATE_DIR="${ROOT_DIR}/${CLAUDE_STATE_DIR#./}"
+fi
+
 LICENSE_SERVER_TOKEN_VALUE="$(resolve_compose_env_value "LICENSE_SERVER_TOKEN" || true)"
 if [[ -z "$LICENSE_SERVER_TOKEN_VALUE" ]]; then
   log_error "LICENSE_SERVER_TOKEN is required. Set it in .env or shell env."
@@ -618,6 +630,9 @@ if [[ -f "$CODEX_AUTH_FILE" ]]; then
 fi
 if [[ -f "$CLAUDE_AUTH_FILE" ]]; then
   COMPOSE_FILES+=(compose/claude/auth-file.yml)
+fi
+if [[ -d "$CLAUDE_STATE_DIR" ]]; then
+  COMPOSE_FILES+=(compose/claude/state-dir.yml)
 fi
 case "$TARGET_RESOLVED" in
   base)
@@ -689,6 +704,7 @@ HOST_OPERATING_SYSTEM=${HOST_OS}
 CODEX_CONFIG_FILE=${CODEX_CONFIG_FILE}
 CODEX_AUTH_FILE=${CODEX_AUTH_FILE}
 CLAUDE_AUTH_FILE=${CLAUDE_AUTH_FILE}
+CLAUDE_STATE_DIR=${CLAUDE_STATE_DIR}
 EOF_ENV
 
 log_info "Deploy profile: client"

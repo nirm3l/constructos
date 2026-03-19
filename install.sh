@@ -21,6 +21,7 @@ DEPLOY_WITH_OLLAMA="${DEPLOY_WITH_OLLAMA:-}"
 CODEX_CONFIG_FILE="${CODEX_CONFIG_FILE:-}"
 CODEX_AUTH_FILE="${CODEX_AUTH_FILE:-}"
 CLAUDE_AUTH_FILE="${CLAUDE_AUTH_FILE:-}"
+CLAUDE_STATE_DIR="${CLAUDE_STATE_DIR:-}"
 EXCHANGED_IMAGE_TAG=""
 
 LOG_COLOR_RESET=""
@@ -782,6 +783,9 @@ if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then
   if [[ -z "$CLAUDE_AUTH_FILE" ]]; then
     CLAUDE_AUTH_FILE="${HOME}/.claude.json"
   fi
+  if [[ -z "$CLAUDE_STATE_DIR" ]]; then
+    CLAUDE_STATE_DIR="${HOME}/.claude"
+  fi
 fi
 
 ENV_FILE_PATH="$(prepare_env_file "$INSTALL_DIR")"
@@ -801,6 +805,9 @@ fi
 if [[ -n "$CLAUDE_AUTH_FILE" ]]; then
   upsert_env_value "$ENV_FILE_PATH" "CLAUDE_AUTH_FILE" "$CLAUDE_AUTH_FILE"
 fi
+if [[ -n "$CLAUDE_STATE_DIR" ]]; then
+  upsert_env_value "$ENV_FILE_PATH" "CLAUDE_STATE_DIR" "$CLAUDE_STATE_DIR"
+fi
 if [[ "$HOST_OS" == "windows" ]]; then
   upsert_env_value "$ENV_FILE_PATH" "DEPLOY_TARGET" "windows-desktop"
 fi
@@ -818,6 +825,10 @@ if [[ -n "$CLAUDE_AUTH_FILE" && ! -f "$CLAUDE_AUTH_FILE" ]]; then
   log_warn "Claude authentication file was not found on host: ${CLAUDE_AUTH_FILE}."
   log_info "Deploy will continue without Claude authentication unless you provide the file later."
 fi
+if [[ -n "$CLAUDE_STATE_DIR" && ! -d "$CLAUDE_STATE_DIR" ]]; then
+  log_warn "Claude state directory was not found on host: ${CLAUDE_STATE_DIR}."
+  log_info "Deploy will continue without Claude state sync unless you provide the directory later."
+fi
 
 if is_truthy "$AUTO_DEPLOY"; then
   if [[ -z "$LICENSE_SERVER_TOKEN" ]]; then
@@ -833,6 +844,7 @@ if is_truthy "$AUTO_DEPLOY"; then
     CODEX_CONFIG_FILE="$CODEX_CONFIG_FILE" \
     CODEX_AUTH_FILE="$CODEX_AUTH_FILE" \
     CLAUDE_AUTH_FILE="$CLAUDE_AUTH_FILE" \
+    CLAUDE_STATE_DIR="$CLAUDE_STATE_DIR" \
     DEPLOY_OLLAMA_MODE="$DEPLOY_OLLAMA_MODE" \
     bash ./scripts/deploy.sh
   )

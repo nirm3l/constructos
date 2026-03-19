@@ -1,0 +1,4 @@
+services:
+  task-app:
+    volumes:
+      - ${CLAUDE_STATE_DIR}:/home/app/.claude-host-ro:ro
