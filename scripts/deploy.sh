@@ -487,7 +487,7 @@ run_compose_step() {
   local shimmer_position=0
   local shimmer_bar=""
   local index=0
-  output_file="$(mktemp "${TMPDIR%/}/constructos-deploy.XXXXXX")"
+  output_file="$(mktemp "${TMPDIR:-/tmp}/constructos-deploy.XXXXXX")"
 
   if [[ -t 1 ]]; then
     "$@" >"$output_file" 2>&1 &
