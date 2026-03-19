@@ -154,6 +154,16 @@ function Uninstall-CosCli {
     & pipx uninstall constructos-cli *> $null
 }
 
+function Remove-InstallDirDeferred {
+    param([string]$ResolvedInstallDir)
+
+    $parentDir = Split-Path -Parent $ResolvedInstallDir
+    $quotedParent = '"' + $parentDir.Replace('"', '""') + '"'
+    $quotedTarget = '"' + $ResolvedInstallDir.Replace('"', '""') + '"'
+    $command = "cd /d $quotedParent && ping 127.0.0.1 -n 3 >nul && rmdir /s /q $quotedTarget"
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/c", $command -WindowStyle Hidden | Out-Null
+}
+
 $resolvedInstallDir = Resolve-InstallDir -RawValue $InstallDir
 $projectName = Resolve-ComposeProjectName -Requested $ComposeProjectName -ResolvedInstallDir $resolvedInstallDir
 
@@ -210,7 +220,19 @@ if (Test-IsTruthy $RemoveInstallDir) {
         if ($currentDir -eq $resolvedInstallDir -or $currentDir.StartsWith("$resolvedInstallDir\")) {
             Set-Location $parentDir
         }
-        Remove-Item -LiteralPath $resolvedInstallDir -Recurse -Force
+        $scriptPath = $PSCommandPath
+        $scriptIsInsideInstallDir = $false
+        if (-not [string]::IsNullOrWhiteSpace($scriptPath)) {
+            $resolvedScriptPath = [System.IO.Path]::GetFullPath($scriptPath)
+            $scriptIsInsideInstallDir = $resolvedScriptPath.StartsWith("$resolvedInstallDir\", [System.StringComparison]::OrdinalIgnoreCase)
+        }
+        if ($scriptIsInsideInstallDir) {
+            Remove-InstallDirDeferred -ResolvedInstallDir $resolvedInstallDir
+            Write-Info "Install directory removal was scheduled and will complete after the script exits."
+        }
+        else {
+            Remove-Item -LiteralPath $resolvedInstallDir -Recurse -Force
+        }
     }
     else {
         Write-Info "Install directory not found: $resolvedInstallDir"
