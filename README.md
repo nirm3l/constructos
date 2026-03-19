@@ -7,6 +7,7 @@ This repository contains the public deployment package for Constructos.
 .
 ├── install.sh
 ├── install.ps1
+├── uninstall.ps1
 ├── uninstall.sh
 ├── index.sh
 ├── scripts/
@@ -49,6 +50,11 @@ $env:IMAGE_TAG='main'
 $env:INSTALL_COS='true'
 $env:AUTO_DEPLOY='1'
 iwr -UseBasicParsing https://raw.githubusercontent.com/nirm3l/constructos/main/install.ps1 | iex
+```
+
+Windows PowerShell uninstall:
+```powershell
+iwr -UseBasicParsing https://raw.githubusercontent.com/nirm3l/constructos/main/uninstall.ps1 | iex
 ```
 
 ## Manual Install
@@ -146,6 +152,12 @@ IMAGE_TAG=main DEPLOY_OLLAMA_MODE=docker-gpu bash ./scripts/deploy.sh
 Uninstall and also remove named volumes:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nirm3l/constructos/main/uninstall.sh | REMOVE_APP_DATA=true bash
+```
+
+Windows PowerShell uninstall and also remove named volumes:
+```powershell
+$env:REMOVE_APP_DATA='true'
+iwr -UseBasicParsing https://raw.githubusercontent.com/nirm3l/constructos/main/uninstall.ps1 | iex
 ```
 
 Disable Ollama:
