@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-$(basename "$ROOT_DIR")}"
 
 DEPLOYED_AT_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo "nogit")"
@@ -663,6 +664,7 @@ case "$RESOLVED_OLLAMA_MODE" in
 esac
 
 COMPOSE_ARGS=()
+COMPOSE_ARGS+=(-p "$COMPOSE_PROJECT_NAME")
 for compose_file in "${COMPOSE_FILES[@]}"; do
   COMPOSE_ARGS+=(-f "$compose_file")
 done
@@ -692,6 +694,7 @@ CLAUDE_AUTH_FILE=${CLAUDE_AUTH_FILE}
 EOF_ENV
 
 log_info "Deploy profile: client"
+log_info "Compose project: ${COMPOSE_PROJECT_NAME}"
 log_info "Version: ${APP_VERSION} (${APP_BUILD})"
 log_info "Target: ${TARGET_RESOLVED}"
 log_info "Source: ghcr"

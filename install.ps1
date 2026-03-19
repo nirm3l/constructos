@@ -673,6 +673,9 @@ function Invoke-ConstructosDeploy {
     }
 
     $composeArgs = New-Object System.Collections.Generic.List[string]
+    $composeProjectName = Split-Path -Leaf $InstallPath
+    $composeArgs.Add("-p")
+    $composeArgs.Add($composeProjectName)
     foreach ($file in $composeFiles) {
         $composeArgs.Add("-f")
         $composeArgs.Add($file)
@@ -702,6 +705,7 @@ CLAUDE_AUTH_FILE=$ClaudeAuthFile
     Set-Content -LiteralPath $deployEnvPath -Value $deployEnv -Encoding UTF8
 
     Write-Info "Deploy profile: client"
+    Write-Info "Compose project: $composeProjectName"
     Write-Info "Version: $appVersion ($appBuild)"
     Write-Info "Target: windows-desktop"
     Write-Info "Ollama mode selected: $resolvedOllamaMode"
