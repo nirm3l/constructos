@@ -4,10 +4,6 @@ param(
     [string]$RepoRef = "",
     [string]$InstallDir = "",
     [string]$ImageTag = "",
-    [string]$LicenseInstallationId = "",
-    [string]$LicenseServerToken = "",
-    [string]$ActivationCode = "",
-    [string]$LicenseServerUrl = "",
     [string]$AutoDeploy = "",
     [string]$InstallCos = "",
     [string]$CosInstallMethod = "",
@@ -54,120 +50,6 @@ function Write-WarnMessage {
 function Write-ErrorMessage {
     param([string]$Message)
     Write-Host "[ERROR] $Message" -ForegroundColor Red
-}
-
-function Resolve-InstallationStateFile {
-    return Join-Path $HOME ".constructos/license-installation-id"
-}
-
-function Read-PersistedInstallationId {
-    $stateFile = Resolve-InstallationStateFile
-    if (-not (Test-Path -LiteralPath $stateFile)) {
-        return ""
-    }
-    return ([string](Get-Content -LiteralPath $stateFile -Raw)).Trim()
-}
-
-function Persist-InstallationId {
-    param([string]$InstallationId)
-
-    $stateFile = Resolve-InstallationStateFile
-    $stateDir = Split-Path -Parent $stateFile
-    New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
-    Set-Content -LiteralPath $stateFile -Value $InstallationId -Encoding UTF8
-}
-
-function Resolve-HostMachineId {
-    $hostOs = Resolve-HostOperatingSystem
-
-    switch ($hostOs) {
-        "windows" {
-            try {
-                return ([string](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Cryptography').MachineGuid).Trim()
-            }
-            catch {
-                return ""
-            }
-        }
-        "linux" {
-            foreach ($candidate in @("/etc/machine-id", "/var/lib/dbus/machine-id")) {
-                if (Test-Path -LiteralPath $candidate) {
-                    return ([string](Get-Content -LiteralPath $candidate -Raw)).Trim()
-                }
-            }
-            return ""
-        }
-        "macos" {
-            $ioregCommand = Get-Command -Name "ioreg" -ErrorAction SilentlyContinue
-            if ($null -eq $ioregCommand) {
-                return ""
-            }
-            try {
-                $output = & $ioregCommand.Path -rd1 -c IOPlatformExpertDevice 2>$null
-                foreach ($line in $output) {
-                    if ([string]$line -match '"IOPlatformUUID"\s*=\s*"([^"]+)"') {
-                        return ([string]$Matches[1]).Trim()
-                    }
-                }
-            }
-            catch {
-                return ""
-            }
-            return ""
-        }
-        default {
-            return ""
-        }
-    }
-}
-
-function Derive-InstallationIdFromMachineId {
-    param([string]$MachineId)
-
-    $normalizedMachineId = ([string]$MachineId).Trim()
-    if ([string]::IsNullOrWhiteSpace($normalizedMachineId)) {
-        return ""
-    }
-
-    $payload = [System.Text.Encoding]::UTF8.GetBytes("constructos:$normalizedMachineId")
-    $sha256 = [System.Security.Cryptography.SHA256]::Create()
-    try {
-        $digestBytes = $sha256.ComputeHash($payload)
-    }
-    finally {
-        $sha256.Dispose()
-    }
-    $digest = -join ($digestBytes | ForEach-Object { $_.ToString("x2") })
-    return "inst-$($digest.Substring(0, 32))"
-}
-
-function Ensure-LicenseInstallationId {
-    param([string]$ConfiguredValue)
-
-    $explicitId = ([string]$ConfiguredValue).Trim()
-    if (-not [string]::IsNullOrWhiteSpace($explicitId)) {
-        Persist-InstallationId -InstallationId $explicitId
-        return $explicitId
-    }
-
-    $machineId = Resolve-HostMachineId
-    $derivedId = Derive-InstallationIdFromMachineId -MachineId $machineId
-    if (-not [string]::IsNullOrWhiteSpace($derivedId)) {
-        Persist-InstallationId -InstallationId $derivedId
-        Write-Info "Resolved stable license installation id from host machine id."
-        return $derivedId
-    }
-
-    $persistedId = Read-PersistedInstallationId
-    if (-not [string]::IsNullOrWhiteSpace($persistedId)) {
-        Write-Info "Reusing persisted license installation id from $(Resolve-InstallationStateFile)."
-        return $persistedId
-    }
-
-    $fallbackId = "inst-$([Guid]::NewGuid().ToString().ToLowerInvariant())"
-    Persist-InstallationId -InstallationId $fallbackId
-    Write-WarnMessage "Host machine id was unavailable; generated and persisted a fallback license installation id."
-    return $fallbackId
 }
 
 function Test-CommandAvailable {
@@ -632,8 +514,6 @@ function Invoke-ConstructosDeploy {
     param(
         [string]$InstallPath,
         [string]$ImageTag,
-        [string]$LicenseInstallationId,
-        [string]$LicenseServerToken,
         [string]$CodexConfigFile,
         [string]$CodexAuthFile,
         [string]$ClaudeAuthFile,
@@ -693,8 +573,6 @@ APP_BUILD=$appBuild
 APP_DEPLOYED_AT_UTC=$deployedAtUtc
 TASK_APP_IMAGE=$taskImage
 MCP_TOOLS_IMAGE=$mcpImage
-LICENSE_INSTALLATION_ID=$LicenseInstallationId
-LICENSE_SERVER_TOKEN=$LicenseServerToken
 HOST_OPERATING_SYSTEM=$(Resolve-HostOperatingSystem)
 CODEX_CONFIG_FILE=$CodexConfigFile
 CODEX_AUTH_FILE=$CodexAuthFile
@@ -783,10 +661,6 @@ $RepoName = Get-SettingValue -Current $RepoName -EnvName "REPO_NAME" -DefaultVal
 $RepoRef = Get-SettingValue -Current $RepoRef -EnvName "REPO_REF" -DefaultValue "main"
 $InstallDir = Get-SettingValue -Current $InstallDir -EnvName "INSTALL_DIR" -DefaultValue "./constructos-client"
 $ImageTag = Get-SettingValue -Current $ImageTag -EnvName "IMAGE_TAG" -DefaultValue ""
-$LicenseInstallationId = Get-SettingValue -Current $LicenseInstallationId -EnvName "LICENSE_INSTALLATION_ID" -DefaultValue ""
-$LicenseServerToken = Get-SettingValue -Current $LicenseServerToken -EnvName "LICENSE_SERVER_TOKEN" -DefaultValue ""
-$ActivationCode = Get-SettingValue -Current $ActivationCode -EnvName "ACTIVATION_CODE" -DefaultValue ""
-$LicenseServerUrl = Get-SettingValue -Current $LicenseServerUrl -EnvName "LICENSE_SERVER_URL" -DefaultValue "https://licence.constructos.dev"
 $AutoDeploy = Get-SettingValue -Current $AutoDeploy -EnvName "AUTO_DEPLOY" -DefaultValue "false"
 $InstallCos = Get-SettingValue -Current $InstallCos -EnvName "INSTALL_COS" -DefaultValue "true"
 $CosInstallMethod = Get-SettingValue -Current $CosInstallMethod -EnvName "COS_INSTALL_METHOD" -DefaultValue "pipx"
@@ -799,7 +673,6 @@ $DeployWithOllama = Get-SettingValue -Current $DeployWithOllama -EnvName "DEPLOY
 $CodexConfigFile = Get-SettingValue -Current $CodexConfigFile -EnvName "CODEX_CONFIG_FILE" -DefaultValue ""
 $CodexAuthFile = Get-SettingValue -Current $CodexAuthFile -EnvName "CODEX_AUTH_FILE" -DefaultValue ""
 $ClaudeAuthFile = Get-SettingValue -Current $ClaudeAuthFile -EnvName "CLAUDE_AUTH_FILE" -DefaultValue ""
-$LicenseInstallationId = Ensure-LicenseInstallationId -ConfiguredValue $LicenseInstallationId
 
 $requestedOllamaMode = Resolve-RequestedOllamaMode -DeployOllamaMode $DeployOllamaMode -DeployWithOllama $DeployWithOllama
 $requestedOllamaMode = Prompt-ForOllamaPreference -RequestedMode $requestedOllamaMode -InstallOllama ([ref]$InstallOllama)
@@ -831,64 +704,30 @@ try {
         throw "Failed to extract downloaded archive."
     }
 
-    $exchangedImageTag = ""
-    if ([string]::IsNullOrWhiteSpace($LicenseServerToken) -and -not [string]::IsNullOrWhiteSpace($ActivationCode)) {
-        $endpoint = "{0}/v1/install/exchange" -f $LicenseServerUrl.TrimEnd("/")
-        $payload = @{
-            activation_code = $ActivationCode
-            operating_system = (Resolve-HostOperatingSystem)
-        } | ConvertTo-Json -Compress
-        try {
-            $response = Invoke-RestMethod -Method Post -Uri $endpoint -ContentType "application/json" -Body $payload
-        }
-        catch {
-            throw "Activation code exchange failed. $($_.Exception.Message)"
-        }
-
-        $token = [string]$response.license_server_token
-        if ([string]::IsNullOrWhiteSpace($token)) {
-            throw "Activation code exchange response did not include license_server_token."
-        }
-        $LicenseServerToken = $token.Trim()
-        $exchangedImageTag = ([string]$response.image_tag).Trim()
-        Write-Info "Exchanged activation code for LICENSE_SERVER_TOKEN via $endpoint."
-    }
-
     if ([string]::IsNullOrWhiteSpace($ImageTag)) {
-        if (-not [string]::IsNullOrWhiteSpace($exchangedImageTag)) {
-            $ImageTag = $exchangedImageTag
-        }
-        else {
-            $ImageTag = "main"
-        }
+        $ImageTag = "main"
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($LicenseServerToken)) {
-        if ([string]::IsNullOrWhiteSpace($CodexConfigFile)) {
-            $CodexConfigFile = "./codex.config.toml"
-        }
-        if ([string]::IsNullOrWhiteSpace($CodexAuthFile)) {
-            $CodexAuthFile = "$HOME/.codex/auth.json"
-        }
-        if ([string]::IsNullOrWhiteSpace($ClaudeAuthFile)) {
-            $ClaudeAuthFile = "$HOME/.claude.json"
-        }
-
-        $resolvedConfig = Resolve-AbsolutePath -PathValue $CodexConfigFile -BasePath $installPath
-        $resolvedAuth = Resolve-AbsolutePath -PathValue $CodexAuthFile -BasePath $installPath
-        $CodexConfigFile = $resolvedConfig
-        $CodexAuthFile = $resolvedAuth
+    if ([string]::IsNullOrWhiteSpace($CodexConfigFile)) {
+        $CodexConfigFile = "./codex.config.toml"
     }
+    if ([string]::IsNullOrWhiteSpace($CodexAuthFile)) {
+        $CodexAuthFile = "$HOME/.codex/auth.json"
+    }
+    if ([string]::IsNullOrWhiteSpace($ClaudeAuthFile)) {
+        $ClaudeAuthFile = "$HOME/.claude.json"
+    }
+
+    $resolvedConfig = Resolve-AbsolutePath -PathValue $CodexConfigFile -BasePath $installPath
+    $resolvedAuth = Resolve-AbsolutePath -PathValue $CodexAuthFile -BasePath $installPath
+    $CodexConfigFile = $resolvedConfig
+    $CodexAuthFile = $resolvedAuth
 
     $envPath = Prepare-EnvFile -InstallPath $installPath
     Upsert-EnvValue -FilePath $envPath -Key "IMAGE_TAG" -Value $ImageTag
-    Upsert-EnvValue -FilePath $envPath -Key "LICENSE_INSTALLATION_ID" -Value $LicenseInstallationId
     Upsert-EnvValue -FilePath $envPath -Key "HOST_OPERATING_SYSTEM" -Value (Resolve-HostOperatingSystem)
     Upsert-EnvValue -FilePath $envPath -Key "DEPLOY_OLLAMA_MODE" -Value $requestedOllamaMode
     Upsert-EnvValue -FilePath $envPath -Key "DEPLOY_TARGET" -Value "windows-desktop"
-    if (-not [string]::IsNullOrWhiteSpace($LicenseServerToken)) {
-        Upsert-EnvValue -FilePath $envPath -Key "LICENSE_SERVER_TOKEN" -Value $LicenseServerToken
-    }
     if (-not [string]::IsNullOrWhiteSpace($CodexConfigFile)) {
         Upsert-EnvValue -FilePath $envPath -Key "CODEX_CONFIG_FILE" -Value (Normalize-ComposePath -PathValue $CodexConfigFile)
     }
@@ -905,10 +744,6 @@ try {
     Write-Info "Selected Ollama deploy mode: $requestedOllamaMode"
 
     if (Test-IsTruthy -Value $AutoDeploy) {
-        if ([string]::IsNullOrWhiteSpace($LicenseServerToken)) {
-            throw "AUTO_DEPLOY requires LICENSE_SERVER_TOKEN or ACTIVATION_CODE."
-        }
-
         if ([string]::IsNullOrWhiteSpace($CodexConfigFile)) {
             $CodexConfigFile = Resolve-AbsolutePath -PathValue "./codex.config.toml" -BasePath $installPath
         }
@@ -919,7 +754,7 @@ try {
             $ClaudeAuthFile = Resolve-AbsolutePath -PathValue "$HOME/.claude.json" -BasePath $installPath
         }
 
-        Invoke-ConstructosDeploy -InstallPath $installPath -ImageTag $ImageTag -LicenseInstallationId $LicenseInstallationId -LicenseServerToken $LicenseServerToken -CodexConfigFile (Normalize-ComposePath -PathValue $CodexConfigFile) -CodexAuthFile (Normalize-ComposePath -PathValue $CodexAuthFile) -ClaudeAuthFile (Normalize-ComposePath -PathValue $ClaudeAuthFile) -RequestedOllamaMode $requestedOllamaMode
+        Invoke-ConstructosDeploy -InstallPath $installPath -ImageTag $ImageTag -CodexConfigFile (Normalize-ComposePath -PathValue $CodexConfigFile) -CodexAuthFile (Normalize-ComposePath -PathValue $CodexAuthFile) -ClaudeAuthFile (Normalize-ComposePath -PathValue $ClaudeAuthFile) -RequestedOllamaMode $requestedOllamaMode
         exit 0
     }
 
@@ -936,17 +771,9 @@ try {
     Write-Host ""
     Write-Host "Next steps:"
     Write-Host "1) Set-Location `"$installPath`""
-    if (-not [string]::IsNullOrWhiteSpace($LicenseServerToken)) {
-        Write-Host "2) .env is already prepared with IMAGE_TAG and LICENSE_SERVER_TOKEN"
-        Write-Host "3) .\\scripts\\deploy.sh (optional if you have bash) or rerun install.ps1 with AUTO_DEPLOY=1"
-        Write-Host "4) Run 'cos --help' (if COS CLI was installed)"
-    }
-    else {
-        Write-Host "2) .env is already prepared with IMAGE_TAG and LICENSE_INSTALLATION_ID"
-        Write-Host "3) Set LICENSE_SERVER_TOKEN in .env"
-        Write-Host "4) Rerun install.ps1 with AUTO_DEPLOY=1"
-        Write-Host "5) Run 'cos --help' (if COS CLI was installed)"
-    }
+    Write-Host "2) .env is already prepared with IMAGE_TAG"
+    Write-Host "3) .\\scripts\\deploy.sh (optional if you have bash) or rerun install.ps1 with AUTO_DEPLOY=1"
+    Write-Host "4) Run 'cos --help' (if COS CLI was installed)"
 }
 finally {
     if (Test-Path -LiteralPath $tmpArchive) {

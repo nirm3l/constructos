@@ -35,7 +35,7 @@ This repository contains the public deployment package for Constructos.
 ## Quick Start
 Linux/macOS:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nirm3l/constructos/main/install.sh | ACTIVATION_CODE=ACT-XXXX-XXXX-XXXX-XXXX-XXXX IMAGE_TAG=main INSTALL_COS=true AUTO_DEPLOY=1 bash
+curl -fsSL https://raw.githubusercontent.com/nirm3l/constructos/main/install.sh | IMAGE_TAG=main INSTALL_COS=true AUTO_DEPLOY=1 bash
 ```
 
 Linux/macOS uninstall:
@@ -45,7 +45,6 @@ curl -fsSL https://raw.githubusercontent.com/nirm3l/constructos/main/uninstall.s
 
 Windows PowerShell (native):
 ```powershell
-$env:ACTIVATION_CODE='ACT-XXXX-XXXX-XXXX-XXXX-XXXX'
 $env:IMAGE_TAG='main'
 $env:INSTALL_COS='true'
 $env:AUTO_DEPLOY='1'
@@ -62,8 +61,7 @@ Linux/macOS:
 ```bash
 git clone https://github.com/nirm3l/constructos.git
 cd constructos
-ACTIVATION_CODE=ACT-XXXX-XXXX-XXXX-XXXX-XXXX IMAGE_TAG=main bash ./install.sh
-# or: set LICENSE_SERVER_TOKEN manually in .env, then deploy
+IMAGE_TAG=main bash ./install.sh
 IMAGE_TAG=main bash ./scripts/deploy.sh
 ```
 
@@ -71,14 +69,12 @@ Windows PowerShell:
 ```powershell
 git clone https://github.com/nirm3l/constructos.git
 cd constructos
-.\install.ps1 -ActivationCode 'ACT-XXXX-XXXX-XXXX-XXXX-XXXX' -ImageTag 'main' -AutoDeploy 'true'
+.\install.ps1 -ImageTag 'main' -AutoDeploy 'true'
 ```
 
 ## Runtime Configuration
 - `DEPLOY_TARGET=auto|base|ubuntu-gpu|macos-m4|windows-desktop` (default: `auto`)
 - `IMAGE_TAG=<tag>` (default: `main`)
-- `ACTIVATION_CODE` (recommended)
-- `LICENSE_SERVER_TOKEN` (manual fallback)
 - `CODEX_CONFIG_FILE` (default: `./codex.config.toml`)
 - `CODEX_AUTH_FILE` (default: `${HOME}/.codex/auth.json`)
 - `CLAUDE_AUTH_FILE` (default: `${HOME}/.claude.json`)
@@ -131,12 +127,12 @@ docker compose -p constructos-jira-mcp -f compose/integrations/jira-mcp.yml up -
 
 Disable automatic COS install:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nirm3l/constructos/main/install.sh | ACTIVATION_CODE=ACT-XXXX-XXXX-XXXX-XXXX-XXXX INSTALL_COS=false bash
+curl -fsSL https://raw.githubusercontent.com/nirm3l/constructos/main/install.sh | INSTALL_COS=false bash
 ```
 
 Skip Ollama installation:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nirm3l/constructos/main/install.sh | ACTIVATION_CODE=ACT-XXXX-XXXX-XXXX-XXXX-XXXX INSTALL_OLLAMA=false bash
+curl -fsSL https://raw.githubusercontent.com/nirm3l/constructos/main/install.sh | INSTALL_OLLAMA=false bash
 ```
 
 Force host Ollama mode:

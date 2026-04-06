@@ -9,7 +9,6 @@ DEPLOYED_AT_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo "nogit")"
 DEPLOY_TARGET="${DEPLOY_TARGET:-}"
 IMAGE_TAG="${IMAGE_TAG:-}"
-LICENSE_INSTALLATION_ID="${LICENSE_INSTALLATION_ID:-}"
 DEPLOY_OLLAMA_MODE="${DEPLOY_OLLAMA_MODE:-}"
 DEPLOY_WITH_OLLAMA="${DEPLOY_WITH_OLLAMA:-}"
 GHCR_OWNER="nirm3l"
@@ -553,13 +552,6 @@ if [[ -z "$IMAGE_TAG" ]]; then
   log_error "Set it in shell env or in .env."
   exit 1
 fi
-if [[ -z "$LICENSE_INSTALLATION_ID" ]]; then
-  LICENSE_INSTALLATION_ID="$(resolve_compose_env_value "LICENSE_INSTALLATION_ID" || true)"
-fi
-if [[ -z "$LICENSE_INSTALLATION_ID" ]]; then
-  log_error "LICENSE_INSTALLATION_ID is required. Run install.sh again or set it in .env."
-  exit 1
-fi
 if [[ -z "$CODEX_CONFIG_FILE" ]]; then
   CODEX_CONFIG_FILE="$(resolve_compose_env_value "CODEX_CONFIG_FILE" || true)"
 fi
@@ -591,12 +583,6 @@ fi
 CLAUDE_AUTH_FILE="$(normalize_host_path "$CLAUDE_AUTH_FILE")"
 if [[ "$CLAUDE_AUTH_FILE" != /* ]]; then
   CLAUDE_AUTH_FILE="${ROOT_DIR}/${CLAUDE_AUTH_FILE#./}"
-fi
-
-LICENSE_SERVER_TOKEN_VALUE="$(resolve_compose_env_value "LICENSE_SERVER_TOKEN" || true)"
-if [[ -z "$LICENSE_SERVER_TOKEN_VALUE" ]]; then
-  log_error "LICENSE_SERVER_TOKEN is required. Set it in .env or shell env."
-  exit 1
 fi
 
 if [[ ! -f "$CODEX_CONFIG_FILE" ]]; then
@@ -685,8 +671,6 @@ APP_BUILD=${APP_BUILD}
 APP_DEPLOYED_AT_UTC=${DEPLOYED_AT_UTC}
 TASK_APP_IMAGE=${TASK_APP_IMAGE}
 MCP_TOOLS_IMAGE=${MCP_TOOLS_IMAGE}
-LICENSE_INSTALLATION_ID=${LICENSE_INSTALLATION_ID}
-LICENSE_SERVER_TOKEN=${LICENSE_SERVER_TOKEN_VALUE}
 HOST_OPERATING_SYSTEM=${HOST_OS}
 CODEX_CONFIG_FILE=${CODEX_CONFIG_FILE}
 CODEX_AUTH_FILE=${CODEX_AUTH_FILE}

@@ -6,10 +6,6 @@ REPO_NAME="${REPO_NAME:-constructos}"
 REPO_REF="${REPO_REF:-main}"
 INSTALL_DIR="${INSTALL_DIR:-./constructos-client}"
 IMAGE_TAG="${IMAGE_TAG:-}"
-LICENSE_INSTALLATION_ID="${LICENSE_INSTALLATION_ID:-}"
-LICENSE_SERVER_TOKEN="${LICENSE_SERVER_TOKEN:-}"
-ACTIVATION_CODE="${ACTIVATION_CODE:-}"
-LICENSE_SERVER_URL="${LICENSE_SERVER_URL:-https://licence.constructos.dev}"
 AUTO_DEPLOY="${AUTO_DEPLOY:-false}"
 INSTALL_COS="${INSTALL_COS:-true}"
 COS_INSTALL_METHOD="${COS_INSTALL_METHOD:-pipx}"
@@ -21,7 +17,6 @@ DEPLOY_WITH_OLLAMA="${DEPLOY_WITH_OLLAMA:-}"
 CODEX_CONFIG_FILE="${CODEX_CONFIG_FILE:-}"
 CODEX_AUTH_FILE="${CODEX_AUTH_FILE:-}"
 CLAUDE_AUTH_FILE="${CLAUDE_AUTH_FILE:-}"
-EXCHANGED_IMAGE_TAG=""
 
 LOG_COLOR_RESET=""
 LOG_COLOR_INFO=""
@@ -48,135 +43,6 @@ log_warn() {
 
 log_error() {
   printf '%b%s%b\n' "$LOG_COLOR_ERROR" "[ERROR] $*" "$LOG_COLOR_RESET" >&2
-}
-
-resolve_installation_state_file() {
-  printf '%s/.constructos/license-installation-id' "${HOME}"
-}
-
-hash_sha256() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum | awk '{print $1}'
-    return 0
-  fi
-  if command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 | awk '{print $1}'
-    return 0
-  fi
-  if command -v openssl >/dev/null 2>&1; then
-    openssl dgst -sha256 | awk '{print $NF}'
-    return 0
-  fi
-  return 1
-}
-
-read_persisted_installation_id() {
-  local state_file
-  state_file="$(resolve_installation_state_file)"
-  if [[ -f "$state_file" ]]; then
-    tr -d '\r\n' <"$state_file"
-  fi
-}
-
-persist_installation_id() {
-  local installation_id="$1"
-  local state_file state_dir
-  state_file="$(resolve_installation_state_file)"
-  state_dir="$(dirname "$state_file")"
-  mkdir -p "$state_dir"
-  printf '%s\n' "$installation_id" >"$state_file"
-}
-
-resolve_host_machine_id() {
-  local host_os="$1"
-  local machine_id=""
-
-  case "$host_os" in
-    linux)
-      if [[ -r /etc/machine-id ]]; then
-        machine_id="$(tr -d '\r\n[:space:]' </etc/machine-id)"
-      elif [[ -r /var/lib/dbus/machine-id ]]; then
-        machine_id="$(tr -d '\r\n[:space:]' </var/lib/dbus/machine-id)"
-      fi
-      ;;
-    macos)
-      if command -v ioreg >/dev/null 2>&1; then
-        machine_id="$(ioreg -rd1 -c IOPlatformExpertDevice 2>/dev/null | awk -F'"' '/IOPlatformUUID/ {print $4; exit}')"
-        machine_id="$(printf '%s' "$machine_id" | tr -d '\r\n[:space:]')"
-      fi
-      ;;
-    windows)
-      if command -v powershell.exe >/dev/null 2>&1; then
-        machine_id="$(
-          powershell.exe -NoProfile -Command "[string](Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Cryptography').MachineGuid" \
-            2>/dev/null \
-            | tr -d '\r\n[:space:]'
-        )"
-      elif command -v reg.exe >/dev/null 2>&1; then
-        machine_id="$(
-          reg.exe query 'HKLM\SOFTWARE\Microsoft\Cryptography' /v MachineGuid 2>/dev/null \
-            | awk '/MachineGuid/ {print $NF; exit}' \
-            | tr -d '\r\n[:space:]'
-        )"
-      fi
-      ;;
-  esac
-
-  printf '%s' "$machine_id"
-}
-
-derive_installation_id_from_machine_id() {
-  local machine_id="$1"
-  local digest=""
-
-  if [[ -z "$machine_id" ]]; then
-    return 1
-  fi
-
-  digest="$(printf 'constructos:%s\n' "$machine_id" | hash_sha256 || true)"
-  if [[ -z "$digest" ]]; then
-    return 1
-  fi
-
-  printf 'inst-%s' "${digest:0:32}"
-}
-
-ensure_license_installation_id() {
-  local explicit_id=""
-  local machine_id=""
-  local derived_id=""
-  local persisted_id=""
-
-  explicit_id="$(printf '%s' "${LICENSE_INSTALLATION_ID}" | tr -d '\r\n[:space:]')"
-  if [[ -n "$explicit_id" ]]; then
-    LICENSE_INSTALLATION_ID="$explicit_id"
-    persist_installation_id "$LICENSE_INSTALLATION_ID"
-    return 0
-  fi
-
-  machine_id="$(resolve_host_machine_id "$HOST_OS")"
-  derived_id="$(derive_installation_id_from_machine_id "$machine_id" || true)"
-  if [[ -n "$derived_id" ]]; then
-    LICENSE_INSTALLATION_ID="$derived_id"
-    persist_installation_id "$LICENSE_INSTALLATION_ID"
-    log_info "Resolved stable license installation id from host machine id."
-    return 0
-  fi
-
-  persisted_id="$(read_persisted_installation_id || true)"
-  if [[ -n "$persisted_id" ]]; then
-    LICENSE_INSTALLATION_ID="$persisted_id"
-    log_info "Reusing persisted license installation id from $(resolve_installation_state_file)."
-    return 0
-  fi
-
-  if command -v uuidgen >/dev/null 2>&1; then
-    LICENSE_INSTALLATION_ID="inst-$(uuidgen | tr '[:upper:]' '[:lower:]' | tr -d '\r\n')"
-  else
-    LICENSE_INSTALLATION_ID="inst-$(date +%s)-$$"
-  fi
-  persist_installation_id "$LICENSE_INSTALLATION_ID"
-  log_warn "Host machine id was unavailable; generated and persisted a fallback license installation id."
 }
 
 is_truthy() {
@@ -662,89 +528,7 @@ install_ollama() {
   return 0
 }
 
-json_extract_field() {
-  local field_name="$1"
-  if command -v python3 >/dev/null 2>&1; then
-    python3 -c '
-import json
-import sys
-
-field_name = sys.argv[1]
-try:
-    payload = json.load(sys.stdin)
-except Exception:
-    sys.exit(0)
-
-value = payload.get(field_name, "")
-if value is None or isinstance(value, (dict, list)):
-    sys.exit(0)
-
-print(str(value))
-' "$field_name"
-    return 0
-  fi
-  sed -n "s/.*\"${field_name}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" | head -n 1
-}
-
-exchange_license_token() {
-  local activation_code="$1"
-  local base_url="${LICENSE_SERVER_URL%/}"
-  local endpoint="${base_url}/v1/install/exchange"
-  local exchange_operating_system="${HOST_OS:-unknown}"
-  local request_payload
-  local response
-  local status
-  local body
-  local exchanged_token
-  local detail
-
-  case "$exchange_operating_system" in
-    linux | macos | windows)
-      ;;
-    *)
-      exchange_operating_system="unknown"
-      ;;
-  esac
-
-  request_payload="$(printf '{"activation_code":"%s","operating_system":"%s"}' \
-    "$(printf '%s' "$activation_code" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')" \
-    "$(printf '%s' "$exchange_operating_system" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')")"
-
-  if ! response="$(curl -sS -X POST "$endpoint" -H "Content-Type: application/json" --data "$request_payload" -w $'\n%{http_code}')"; then
-    log_error "Failed to reach license server endpoint: ${endpoint}"
-    return 1
-  fi
-
-  status="${response##*$'\n'}"
-  body="${response%$'\n'*}"
-  if [[ "$status" == "$response" ]]; then
-    status=""
-    body="$response"
-  fi
-  if [[ "$status" != "200" ]]; then
-    detail="$(printf '%s' "$body" | json_extract_field "detail")"
-    if [[ -z "$detail" ]]; then
-      detail="$(printf '%s' "$body" | json_extract_field "message")"
-    fi
-    log_error "Activation code exchange failed (${status:-unknown HTTP status})."
-    if [[ -n "$detail" ]]; then
-      log_error "Server detail: ${detail}"
-    fi
-    return 1
-  fi
-
-  exchanged_token="$(printf '%s' "$body" | json_extract_field "license_server_token")"
-  if [[ -z "$exchanged_token" ]]; then
-    log_error "Activation code exchange response did not include license_server_token."
-    return 1
-  fi
-
-  EXCHANGED_IMAGE_TAG="$(printf '%s' "$body" | json_extract_field "image_tag")"
-  LICENSE_SERVER_TOKEN="$exchanged_token"
-}
-
 HOST_OS="$(resolve_host_os)"
-ensure_license_installation_id
 ensure_docker_available "$HOST_OS" "false" || true
 resolve_requested_ollama_mode
 prompt_for_ollama_preference "$HOST_OS"
@@ -763,35 +547,24 @@ chmod +x \
   "$INSTALL_DIR/uninstall.sh" \
   "$INSTALL_DIR/scripts/deploy.sh" 2>/dev/null || true
 
-if [[ -z "$LICENSE_SERVER_TOKEN" && -n "$ACTIVATION_CODE" ]]; then
-  exchange_license_token "$ACTIVATION_CODE"
-  log_info "Exchanged activation code for LICENSE_SERVER_TOKEN via ${LICENSE_SERVER_URL%/}/v1/install/exchange."
-fi
-
 if [[ -z "$IMAGE_TAG" ]]; then
-  IMAGE_TAG="${EXCHANGED_IMAGE_TAG:-main}"
+  IMAGE_TAG="main"
 fi
 
-if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then
-  if [[ -z "$CODEX_CONFIG_FILE" ]]; then
-    CODEX_CONFIG_FILE="./codex.config.toml"
-  fi
-  if [[ -z "$CODEX_AUTH_FILE" ]]; then
-    CODEX_AUTH_FILE="${HOME}/.codex/auth.json"
-  fi
-  if [[ -z "$CLAUDE_AUTH_FILE" ]]; then
-    CLAUDE_AUTH_FILE="${HOME}/.claude.json"
-  fi
+if [[ -z "$CODEX_CONFIG_FILE" ]]; then
+  CODEX_CONFIG_FILE="./codex.config.toml"
+fi
+if [[ -z "$CODEX_AUTH_FILE" ]]; then
+  CODEX_AUTH_FILE="${HOME}/.codex/auth.json"
+fi
+if [[ -z "$CLAUDE_AUTH_FILE" ]]; then
+  CLAUDE_AUTH_FILE="${HOME}/.claude.json"
 fi
 
 ENV_FILE_PATH="$(prepare_env_file "$INSTALL_DIR")"
 upsert_env_value "$ENV_FILE_PATH" "IMAGE_TAG" "$IMAGE_TAG"
-upsert_env_value "$ENV_FILE_PATH" "LICENSE_INSTALLATION_ID" "$LICENSE_INSTALLATION_ID"
 upsert_env_value "$ENV_FILE_PATH" "HOST_OPERATING_SYSTEM" "$HOST_OS"
 upsert_env_value "$ENV_FILE_PATH" "DEPLOY_OLLAMA_MODE" "$DEPLOY_OLLAMA_MODE"
-if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then
-  upsert_env_value "$ENV_FILE_PATH" "LICENSE_SERVER_TOKEN" "$LICENSE_SERVER_TOKEN"
-fi
 if [[ -n "$CODEX_CONFIG_FILE" ]]; then
   upsert_env_value "$ENV_FILE_PATH" "CODEX_CONFIG_FILE" "$CODEX_CONFIG_FILE"
 fi
@@ -819,16 +592,11 @@ if [[ -n "$CLAUDE_AUTH_FILE" && ! -f "$CLAUDE_AUTH_FILE" ]]; then
   log_info "Deploy will continue without Claude authentication unless you provide the file later."
 fi
 if is_truthy "$AUTO_DEPLOY"; then
-  if [[ -z "$LICENSE_SERVER_TOKEN" ]]; then
-    log_error "AUTO_DEPLOY requires LICENSE_SERVER_TOKEN or ACTIVATION_CODE."
-    exit 1
-  fi
   ensure_docker_available "$HOST_OS" "true"
   log_info "Running deploy in ${INSTALL_DIR}..."
   (
     cd "$INSTALL_DIR"
     IMAGE_TAG="$IMAGE_TAG" \
-    LICENSE_SERVER_TOKEN="$LICENSE_SERVER_TOKEN" \
     CODEX_CONFIG_FILE="$CODEX_CONFIG_FILE" \
     CODEX_AUTH_FILE="$CODEX_AUTH_FILE" \
     CLAUDE_AUTH_FILE="$CLAUDE_AUTH_FILE" \
@@ -851,18 +619,11 @@ echo "  docker compose -p constructos-jira-mcp -f compose/integrations/jira-mcp.
 echo ""
 echo "Next steps:"
 echo "1) cd ${INSTALL_DIR}"
-if [[ -n "$LICENSE_SERVER_TOKEN" ]]; then
-  echo "2) .env is already prepared with IMAGE_TAG and LICENSE_SERVER_TOKEN"
-  echo "3) IMAGE_TAG=${IMAGE_TAG} bash ./scripts/deploy.sh"
-  echo "4) run 'cos --help' (if COS CLI was installed)"
-else
-  echo "2) .env is already prepared with IMAGE_TAG and LICENSE_INSTALLATION_ID"
-  echo "3) set LICENSE_SERVER_TOKEN in .env"
-  echo "4) IMAGE_TAG=${IMAGE_TAG} bash ./scripts/deploy.sh"
-  echo "5) run 'cos --help' (if COS CLI was installed)"
-fi
+echo "2) .env is already prepared with IMAGE_TAG"
+echo "3) IMAGE_TAG=${IMAGE_TAG} bash ./scripts/deploy.sh"
+echo "4) run 'cos --help' (if COS CLI was installed)"
 
 echo ""
 echo "No-edit install (recommended):"
 echo "curl -fsSL https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${REPO_REF}/install.sh | \\"
-echo "  ACTIVATION_CODE='ACT-XXXX-XXXX-XXXX-XXXX-XXXX' IMAGE_TAG=${IMAGE_TAG} INSTALL_COS=true INSTALL_OLLAMA=auto AUTO_DEPLOY=1 bash"
+echo "  IMAGE_TAG=${IMAGE_TAG} INSTALL_COS=true INSTALL_OLLAMA=auto AUTO_DEPLOY=1 bash"

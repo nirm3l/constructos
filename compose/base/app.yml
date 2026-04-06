@@ -109,8 +109,6 @@ services:
       ALLOWED_EMBEDDING_MODELS: "${ALLOWED_EMBEDDING_MODELS:-nomic-embed-text,mxbai-embed-large,embeddinggemma}"
       OLLAMA_EMBED_GPU_ENABLED: "${OLLAMA_EMBED_GPU_ENABLED:-true}"
       HOST_OPERATING_SYSTEM: "${HOST_OPERATING_SYSTEM:-}"
-      LICENSE_INSTALLATION_ID: "${LICENSE_INSTALLATION_ID:-}"
-      LICENSE_SERVER_TOKEN: "${LICENSE_SERVER_TOKEN:-}"
     volumes:
       - ${CODEX_CONFIG_FILE}:/home/app/.codex/config.toml:ro
       - codex-home-data:/home/app/codex-home
@@ -179,8 +177,6 @@ services:
       ALLOWED_EMBEDDING_MODELS: "${ALLOWED_EMBEDDING_MODELS:-nomic-embed-text,mxbai-embed-large,embeddinggemma}"
       OLLAMA_EMBED_GPU_ENABLED: "${OLLAMA_EMBED_GPU_ENABLED:-true}"
       HOST_OPERATING_SYSTEM: "${HOST_OPERATING_SYSTEM:-}"
-      LICENSE_INSTALLATION_ID: "${LICENSE_INSTALLATION_ID:-}"
-      LICENSE_SERVER_TOKEN: "${LICENSE_SERVER_TOKEN:-}"
     ports:
       - "${MCP_PORT:-8091}:8091"
     security_opt:
